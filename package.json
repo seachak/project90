@@ -14,7 +14,8 @@
     "db:push": "supabase db push",
     "db:new": "supabase migration new",
     "db:link": "supabase link --project-ref jxmwamgfgqqsedhjvpwn",
-    "samples:gen": "node scripts/gen-samples.mjs"
+    "samples:gen": "node scripts/gen-samples.mjs",
+    "samples:room": "node scripts/gen-demo-room.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",

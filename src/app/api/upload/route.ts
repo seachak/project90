@@ -44,19 +44,26 @@ export async function POST(request: NextRequest) {
     const thumb = await makeThumbnail(await file.arrayBuffer(), size);
     const base = path.replace(/\.[a-z0-9]+$/i, "");
     const thumbPath = `${base}.thumb.webp`;
+    // 비공개 projects 버킷의 썸네일은 같은 버킷(비공개)에 두고, 나머지는 공개 thumbnails 버킷에 둔다
+    const thumbBucket = bucket === "projects" ? "projects" : "thumbnails";
     const { error: uploadError } = await supabase.storage
-      .from("thumbnails")
+      .from(thumbBucket)
       .upload(thumbPath, thumb.buffer, { contentType: "image/webp", upsert: true, cacheControl: "3600" });
     if (uploadError) {
       return NextResponse.json({ error: `썸네일 업로드 실패: ${uploadError.message}` }, { status: 500 });
     }
-    const {
-      data: { publicUrl },
-    } = supabase.storage.from("thumbnails").getPublicUrl(thumbPath);
+    let thumbnailUrl: string;
+    if (thumbBucket === "projects") {
+      const { data: signed } = await supabase.storage.from("projects").createSignedUrl(thumbPath, 3600);
+      thumbnailUrl = signed?.signedUrl ?? "";
+    } else {
+      thumbnailUrl = supabase.storage.from("thumbnails").getPublicUrl(thumbPath).data.publicUrl;
+    }
 
     return NextResponse.json({
-      thumbnailUrl: publicUrl,
+      thumbnailUrl,
       thumbnailPath: thumbPath,
+      thumbnailBucket: thumbBucket,
       width: thumb.sourceWidth,
       height: thumb.sourceHeight,
       isPublicSource: PUBLIC_BUCKETS.has(bucket),

@@ -50,8 +50,10 @@ pnpm dev                            # http://localhost:3000
 
 대시보드: <https://supabase.com/dashboard/project/jxmwamgfgqqsedhjvpwn>
 
-1. **스키마 생성** — SQL Editor 에서 [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) 전체를 실행합니다.
-   테이블·RLS·Realtime·Storage 버킷(textures, cutouts, thumbnails, projects, renders)·공유 RPC 가 한 번에 만들어집니다.
+1. **스키마 생성** — SQL Editor 에서 `supabase/migrations/` 의 SQL 파일을 번호 순서대로 실행합니다.
+   - [`0001_init.sql`](supabase/migrations/0001_init.sql): 테이블·RLS·Realtime·Storage 버킷(textures, cutouts, thumbnails, projects, renders)·공유 RPC
+   - [`0002_surface_editor.sql`](supabase/migrations/0002_surface_editor.sql): 마스킹 에디터 상태 컬럼(`surfaces.editor`)
+
    (또는 아래 GitHub 통합을 설정하면 `main` 푸시 시 자동 적용됩니다.)
 2. **Auth → URL Configuration**
    - Site URL: `http://localhost:3000` (배포 후 Vercel 도메인으로 변경)
@@ -85,6 +87,18 @@ pnpm dev                            # http://localhost:3000
   | 이미지URL / image_url | 타일은 texture_url, 위생도기는 cutout_url 로 저장 |
   | 가로mm, 세로mm, 줄눈색, 줄눈두께, 마감(무광/새틴/유광) | 타일 |
   | 실제폭, 실제높이, 실제깊이, 설치방식(바닥설치/벽걸이/카운터탑) | 위생도기 |
+
+## 프로젝트와 표면 마스킹 (기능 3-1)
+
+- `/projects/new` — 프로젝트명·고객·주소 + 시공 전 사진(필수) / 실제 시공 후 사진(선택).
+  사진은 비공개 `projects` 버킷의 `<uid>/<projectId>/before.jpg` 에 저장되고 화면에서는 1시간짜리 서명 URL 로 표시됩니다.
+- `/projects/[id]/mask` — 표면 마스킹 에디터
+  - **폴리곤** (P): 클릭으로 꼭짓점 추가, 첫 점 클릭/더블클릭/Enter 로 닫기, 드래그 이동, 우클릭 삭제, C 로 베지어 핸들 토글(둥근 벽)
+  - **매직완드** (W): 클릭 지점과 비슷한 색을 flood-fill 로 선택 → 외곽선 추출 → 폴리곤. 허용오차와 **경계 감도**(밝기가 꺾이는 모서리에서 멈춤) 조절
+  - **원근 4점** (Q): 실제로 직사각형인 4점(좌상→우상→우하→좌하)을 찍으면 호모그래피로 투영 격자를 보여줍니다
+  - 라벨(바닥/정면벽/좌측벽…), 종류, 실제 치수(mm), z-order, 실행취소/재실행 50단계, 휠 확대·Space 드래그 이동, 터치 핀치
+  - 저장 시 `surfaces.polygon` 에는 평탄화된 `[[x,y],…]`, `surfaces.quad` 에는 4점, `surfaces.editor` 에는 베지어 핸들 등 편집 상태가 들어갑니다
+- 개발 중에는 Supabase 없이 `/dev/mask` 에서 합성 욕실 사진(`pnpm samples:room`)으로 에디터를 시험할 수 있습니다 (프로덕션에서는 404)
 
 ## 스크립트
 

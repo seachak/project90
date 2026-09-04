@@ -175,6 +175,7 @@ export type Database = {
           real_height_mm: number | null;
           shading_url: string | null;
           z_order: number | null;
+          editor: Json | null;
           created_at: string | null;
         };
         Insert: {
@@ -188,6 +189,7 @@ export type Database = {
           real_height_mm?: number | null;
           shading_url?: string | null;
           z_order?: number | null;
+          editor?: Json | null;
           created_at?: string | null;
         };
         Update: {
@@ -201,6 +203,7 @@ export type Database = {
           real_height_mm?: number | null;
           shading_url?: string | null;
           z_order?: number | null;
+          editor?: Json | null;
           created_at?: string | null;
         };
         Relationships: [
