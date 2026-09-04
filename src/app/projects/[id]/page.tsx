@@ -16,10 +16,11 @@ export const metadata: Metadata = { title: "시뮬레이터" };
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const supabase = await createClient();
-  const [{ data: project }, { data: surfaceRows }, { data: placementRows }] = await Promise.all([
+  const [{ data: project }, { data: surfaceRows }, { data: placementRows }, { data: sceneRow }] = await Promise.all([
     supabase.from("projects").select("*").eq("id", id).maybeSingle(),
     supabase.from("surfaces").select("*").eq("project_id", id).order("z_order"),
     supabase.from("placements").select("*").eq("project_id", id).order("z_order"),
+    supabase.from("scene_settings").select("*").eq("project_id", id).maybeSingle(),
   ]);
   if (!project) notFound();
 
@@ -61,6 +62,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       materials={materials}
       tilePlacements={tilePlacements}
       objectPlacements={objectPlacements}
+      sceneSettings={sceneRow}
       mode="supabase"
     />
   );

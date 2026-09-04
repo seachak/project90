@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { ArrowLeft, PencilRuler } from "lucide-react";
 import { BeforeAfterViewer } from "@/components/canvas/BeforeAfterViewer";
 import { ViewModeBar } from "@/components/simulator/ViewModeBar";
@@ -9,12 +9,13 @@ import { EstimatePanel } from "@/components/panels/EstimatePanel";
 import { LayerPanel } from "@/components/panels/LayerPanel";
 import { MaterialLibrary } from "@/components/panels/MaterialLibrary";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SceneControls } from "@/components/panels/SceneControls";
 import { buttonVariants } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
+import type { SceneSettings } from "@/lib/render/colorGrade";
 import type { SceneRenderer } from "@/lib/render/renderer";
 import { materialSourceUrl } from "@/lib/materials/queries";
 import { useProjectStore, type ProjectInfo, type RenderSurface } from "@/store/useProjectStore";
+import { useSceneStore } from "@/store/useSceneStore";
 import { useViewerStore } from "@/store/useViewerStore";
 import { cn } from "@/lib/utils";
 import type { Material } from "@/types/material";
@@ -26,6 +27,8 @@ export interface SimulatorProps {
   materials: Material[];
   tilePlacements: TilePlacement[];
   objectPlacements: ObjectPlacement[];
+  /** 저장된 조명·채도 설정 (없으면 기본값) */
+  sceneSettings?: Partial<Record<keyof SceneSettings, unknown>> | null;
   /** 데모 모드: 정적 자재 목록 */
   staticMaterials?: Material[];
   mode: "supabase" | "demo";
@@ -37,17 +40,17 @@ export interface SimulatorProps {
  * │ 자재 라이브러리 │ 캔버스 (줌/팬) │ 조명·채도 / 견적 │
  * │                 │ 레이어 패널     │                 │
  */
-export function Simulator({ project, surfaces, materials, tilePlacements, objectPlacements, staticMaterials, mode }: SimulatorProps) {
+export function Simulator({ project, surfaces, materials, tilePlacements, objectPlacements, sceneSettings, staticMaterials, mode }: SimulatorProps) {
   const init = useProjectStore((s) => s.init);
+  const initScene = useSceneStore((s) => s.init);
   const rendererRef = useRef<SceneRenderer | null>(null);
-  const [shading, setShading] = useState(100);
-
   const setHasActual = useViewerStore((s) => s.setHasActual);
 
   useEffect(() => {
     init({ project, surfaces, materials: [...materials, ...(staticMaterials ?? [])], tilePlacements, objectPlacements });
+    initScene(sceneSettings ?? null);
     setHasActual(Boolean(project.afterImageUrl));
-  }, [init, project, surfaces, materials, tilePlacements, objectPlacements, staticMaterials, setHasActual]);
+  }, [init, initScene, project, surfaces, materials, tilePlacements, objectPlacements, sceneSettings, staticMaterials, setHasActual]);
 
   return (
     <div className="flex h-svh flex-col bg-background">
@@ -87,29 +90,8 @@ export function Simulator({ project, surfaces, materials, tilePlacements, object
         </main>
 
         <aside className="order-3 hidden w-72 shrink-0 flex-col border-l lg:flex">
-          <div className="flex-1 border-b p-3 text-xs text-muted-foreground">
-            <h3 className="mb-2 font-semibold text-foreground">조명 · 채도</h3>
-            <div className="mb-3 flex flex-col gap-1.5">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs text-foreground">원본 조명 합성 (shading)</Label>
-                <span className="tabular-nums">{shading}%</span>
-              </div>
-              <Slider
-                min={0}
-                max={100}
-                value={shading}
-                onValueChange={(v) => {
-                  const next = Array.isArray(v) ? v[0] : v;
-                  setShading(next);
-                  rendererRef.current?.setShadingStrength(next / 100);
-                }}
-                aria-label="조명 합성 강도"
-              />
-              <p>원본 사진의 명암(그림자·원근 감쇠)을 새 타일 위에 곱합니다. 0 이면 끔.</p>
-            </div>
-            밝기 · 노출 · 대비 · 채도 · 색온도 · 프리셋은 Phase 7 에서 제공됩니다.
-          </div>
-          <EstimatePanel className="max-h-72 overflow-y-auto" />
+          <SceneControls className="min-h-0 flex-1 overflow-y-auto border-b" />
+          <EstimatePanel className="max-h-64 shrink-0 overflow-y-auto" />
         </aside>
       </div>
     </div>

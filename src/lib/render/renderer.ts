@@ -18,6 +18,7 @@ import {
   Graphics,
   ImageSource,
   Mesh,
+  Rectangle,
   Shader,
   Sprite,
   Texture,
@@ -25,6 +26,8 @@ import {
   UniformGroup,
   type TextureSource,
 } from "pixi.js";
+import type { SceneSettings } from "@/lib/render/colorGrade";
+import { ColorGradeFilter } from "@/lib/render/gradeFilter";
 import { polygonBounds, type Point } from "@/lib/geometry";
 import { canvasToImageData, drawToCanvas, loadImage } from "@/lib/image/loadImage";
 import type { RasterLike } from "@/lib/image/palette";
@@ -143,6 +146,8 @@ export class SceneRenderer {
   private viewportW = 1;
   private viewportH = 1;
   private fade = { alpha: 0, target: 0, from: 0, start: 0, raf: 0 };
+  /** 씬 전체 색보정 (Phase 7) */
+  private readonly gradeFilter = new ColorGradeFilter();
   private readonly layers = new Map<string, SurfaceLayer>();
   private readonly imageCache = new Map<string, Promise<DecodedImage>>();
   private readonly whiteSource: CanvasSource;
@@ -170,6 +175,9 @@ export class SceneRenderer {
     this.viewportW = app.renderer.width;
     this.viewportH = app.renderer.height;
     this.updateHalfMasks();
+    // 색보정은 stage 전체(원본 + 타일 + 오브젝트 + BEFORE 레이어)에 1패스로 적용
+    app.stage.filters = [this.gradeFilter];
+    app.stage.filterArea = new Rectangle(0, 0, this.viewportW, this.viewportH);
     const white = document.createElement("canvas");
     white.width = 2;
     white.height = 2;
@@ -302,9 +310,10 @@ export class SceneRenderer {
         source.destroy();
         return;
       }
-      layer.shadingSource?.destroy();
+      const previous = layer.shadingSource;
       layer.shadingSource = source;
       layer.mesh.shader!.resources.uShading = source;
+      previous?.destroy();
       (layer.uniforms.uniforms as Record<string, unknown>).uUseShading = this.shadingStrength;
       layer.uniforms.update();
       this.requestRender();
@@ -375,8 +384,21 @@ export class SceneRenderer {
     this.viewportW = Math.max(1, width);
     this.viewportH = Math.max(1, height);
     this.app.renderer.resize(this.viewportW, this.viewportH);
+    this.app.stage.filterArea = new Rectangle(0, 0, this.viewportW, this.viewportH);
     this.updateHalfMasks();
     this.setCamera(this.camera);
+  }
+
+  // ---------- 색보정 ----------
+  setSceneSettings(settings: SceneSettings): void {
+    this.gradeFilter.setSettings(settings);
+    this.requestRender();
+  }
+
+  /** "원본과 비교": false 면 보정 전 화면 */
+  setGradeEnabled(enabled: boolean): void {
+    this.gradeFilter.setEnabled(enabled);
+    this.requestRender();
   }
 
   // ---------- Before / After ----------
@@ -761,11 +783,11 @@ export class SceneRenderer {
       src.update();
       return;
     }
-    src?.destroy();
     const source = new CanvasSource({ resource: canvas, autoGenerateMipmaps: true });
     source.style = makeTextureStyle({ anisotropy: 16 });
     layer.patternSource = source;
-    layer.mesh.shader!.resources.uPattern = source;
+    layer.mesh.shader!.resources.uPattern = source; // 먼저 교체한 뒤 이전 소스를 정리 (바인딩 중 destroy 경고 방지)
+    src?.destroy();
   }
 
   // ---------- 렌더 루프 ----------

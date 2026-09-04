@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import type { SceneRenderer, CameraState } from "@/lib/render/renderer";
 import { effectiveTilePlacements, useProjectStore } from "@/store/useProjectStore";
+import { useSceneStore } from "@/store/useSceneStore";
 import { useViewerStore } from "@/store/useViewerStore";
 import { cn } from "@/lib/utils";
 
@@ -98,6 +99,17 @@ export function SimulatorCanvas({ className, onRendererReady }: SimulatorCanvasP
     applyViewer(useViewerStore.getState());
     const unsubscribeViewer = useViewerStore.subscribe((v) => applyViewer(v));
 
+    // 조명·채도 동기화
+    const applyScene = (sc: ReturnType<typeof useSceneStore.getState>) => {
+      renderer.setSceneSettings(sc.settings);
+      renderer.setGradeEnabled(!sc.compareOriginal);
+      renderer.setShadingStrength(sc.shadingStrength);
+    };
+    applyScene(useSceneStore.getState());
+    const unsubscribeScene = useSceneStore.subscribe((sc, prev) => {
+      if (sc.settings !== prev.settings || sc.compareOriginal !== prev.compareOriginal || sc.shadingStrength !== prev.shadingStrength) applyScene(sc);
+    });
+
     const state = useProjectStore.getState();
     void applyProject(state.project);
 
@@ -120,6 +132,7 @@ export function SimulatorCanvas({ className, onRendererReady }: SimulatorCanvasP
     return () => {
       unsubscribe();
       unsubscribeViewer();
+      unsubscribeScene();
     };
   }, [ready]);
 
