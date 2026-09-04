@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, PencilRuler } from "lucide-react";
-import { SimulatorCanvas } from "@/components/canvas/SimulatorCanvas";
+import { BeforeAfterViewer } from "@/components/canvas/BeforeAfterViewer";
+import { ViewModeBar } from "@/components/simulator/ViewModeBar";
 import { EstimatePanel } from "@/components/panels/EstimatePanel";
 import { LayerPanel } from "@/components/panels/LayerPanel";
 import { MaterialLibrary } from "@/components/panels/MaterialLibrary";
@@ -14,6 +15,7 @@ import { Slider } from "@/components/ui/slider";
 import type { SceneRenderer } from "@/lib/render/renderer";
 import { materialSourceUrl } from "@/lib/materials/queries";
 import { useProjectStore, type ProjectInfo, type RenderSurface } from "@/store/useProjectStore";
+import { useViewerStore } from "@/store/useViewerStore";
 import { cn } from "@/lib/utils";
 import type { Material } from "@/types/material";
 import type { ObjectPlacement, TilePlacement } from "@/types/placement";
@@ -40,9 +42,12 @@ export function Simulator({ project, surfaces, materials, tilePlacements, object
   const rendererRef = useRef<SceneRenderer | null>(null);
   const [shading, setShading] = useState(100);
 
+  const setHasActual = useViewerStore((s) => s.setHasActual);
+
   useEffect(() => {
     init({ project, surfaces, materials: [...materials, ...(staticMaterials ?? [])], tilePlacements, objectPlacements });
-  }, [init, project, surfaces, materials, tilePlacements, objectPlacements, staticMaterials]);
+    setHasActual(Boolean(project.afterImageUrl));
+  }, [init, project, surfaces, materials, tilePlacements, objectPlacements, staticMaterials, setHasActual]);
 
   return (
     <div className="flex h-svh flex-col bg-background">
@@ -52,8 +57,8 @@ export function Simulator({ project, surfaces, materials, tilePlacements, object
           <span className="inline-flex size-6 items-center justify-center rounded-md bg-primary text-[11px] font-bold text-primary-foreground">90</span>
         </Link>
         <span className="truncate text-sm font-medium">{project.name}</span>
+        <ViewModeBar className="ml-2" />
         <div className="ml-auto flex items-center gap-2">
-          <span className="hidden text-xs text-muted-foreground sm:inline">BEFORE / AFTER 비교는 Phase 6</span>
           {mode === "supabase" && (
             <Link href={`/projects/${project.id}/mask`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               <PencilRuler className="size-4" data-icon="inline-start" />
@@ -74,7 +79,7 @@ export function Simulator({ project, surfaces, materials, tilePlacements, object
 
         <main className="order-1 flex min-h-0 min-w-0 flex-1 flex-col md:order-2">
           <div className="relative min-h-0 flex-1">
-            <SimulatorCanvas onRendererReady={(r) => (rendererRef.current = r)} />
+            <BeforeAfterViewer onRendererReady={(r) => (rendererRef.current = r)} />
           </div>
           <div className="h-28 shrink-0 border-t">
             <LayerPanel />

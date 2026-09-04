@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import type { SceneRenderer, CameraState } from "@/lib/render/renderer";
 import { effectiveTilePlacements, useProjectStore } from "@/store/useProjectStore";
+import { useViewerStore } from "@/store/useViewerStore";
 import { cn } from "@/lib/utils";
 
 interface SimulatorCanvasProps {
@@ -81,7 +82,21 @@ export function SimulatorCanvas({ className, onRendererReady }: SimulatorCanvasP
       const s = useProjectStore.getState();
       renderer.setSurfaces(s.surfaces);
       renderer.setTilePlacements(effectiveTilePlacements(s), s.materials);
+      void renderer.setActualImage(project.afterImageUrl ?? null).catch((err) => console.warn(err));
     };
+
+    // Before/After 모드 동기화
+    const applyViewer = (v: ReturnType<typeof useViewerStore.getState>) => {
+      const wasSplit = renderer.getViewMode() === "split";
+      renderer.setViewMode(v.mode);
+      renderer.setSliderFraction(v.sliderX);
+      renderer.setHoldBefore(v.holdBefore);
+      if (wasSplit !== (v.mode === "split") && !userMoved.current) {
+        cameraRef.current = renderer.fitCamera(container.clientWidth, container.clientHeight);
+      }
+    };
+    applyViewer(useViewerStore.getState());
+    const unsubscribeViewer = useViewerStore.subscribe((v) => applyViewer(v));
 
     const state = useProjectStore.getState();
     void applyProject(state.project);
@@ -102,7 +117,10 @@ export function SimulatorCanvas({ className, onRendererReady }: SimulatorCanvasP
         renderer.setTilePlacements(effectiveTilePlacements(s), s.materials);
       }
     });
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribeViewer();
+    };
   }, [ready]);
 
   // 리사이즈
@@ -127,8 +145,10 @@ export function SimulatorCanvas({ className, onRendererReady }: SimulatorCanvasP
   const onWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
     e.preventDefault();
     const rect = containerRef.current!.getBoundingClientRect();
-    const cx = e.clientX - rect.left;
+    let cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
+    // 분할 모드에서 오른쪽 절반은 자체 원점을 가진다
+    if (useViewerStore.getState().mode === "split" && cx >= rect.width / 2) cx -= rect.width / 2;
     const cam = cameraRef.current;
     const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, cam.scale * Math.exp(-e.deltaY * 0.0015)));
     const k = scale / cam.scale;

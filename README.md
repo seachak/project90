@@ -113,6 +113,16 @@ pnpm dev                            # http://localhost:3000
 - 개발 중에는 `/dev/sim` 에서 합성 욕실 + 샘플 타일로 Supabase 없이 시험할 수 있습니다
 - 개발 서버가 켜진 상태에서 빌드를 검증하려면 `NEXT_DIST_DIR=.next-build pnpm build` (`.next` 를 덮어쓰지 않음)
 
+### Before / After 비교 (기능 2)
+
+헤더의 **[BEFORE] [AFTER] [슬라이더] [분할] [실제 시공본]** 토글 (`ViewModeBar`) 과 `BeforeAfterViewer`.
+
+- 원본 사진 레이어를 시뮬레이션 위에 **항상 겹쳐 두고 opacity/마스크만** 바꾸므로 전환 시 깜빡임·위치 어긋남이 없습니다
+- 버튼 토글: 200ms 크로스페이드 · 단축키 **B / A** · **Space 를 누르는 동안** 임시로 BEFORE (사진 편집 앱의 "원본 보기")
+- 슬라이더: 세로 구분선을 마우스·터치로 드래그 (스텐실 마스크), 방향키 미세 조정
+- 분할: 좌 BEFORE / 우 AFTER 나란히 — 줌·팬이 두 뷰에 완전히 동기화
+- 실제 시공본: `projects.after_url` 이 있으면 탭이 추가됩니다
+
 ### 음영(Shading) 합성 — "자연스러움"의 핵심 (기능 3-2)
 
 `src/lib/render/shading.ts` (순수 함수, 테스트)

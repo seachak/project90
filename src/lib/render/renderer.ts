@@ -15,6 +15,7 @@ import {
   CanvasSource,
   Container,
   Geometry,
+  Graphics,
   ImageSource,
   Mesh,
   Shader,
@@ -42,6 +43,11 @@ export interface CameraState {
   x: number;
   y: number;
 }
+
+/** Before/After 보기 모드 */
+export type ViewMode = "after" | "before" | "slider" | "split" | "actual";
+
+const FADE_MS = 200;
 
 interface DecodedImage {
   source: HTMLImageElement | HTMLCanvasElement;
@@ -118,6 +124,25 @@ export class SceneRenderer {
   private baseRasterScale = 1;
   /** shading 합성 강도 0~1 */
   private shadingStrength = 1;
+
+  // ----- Before/After -----
+  /** world 최상단의 원본 사진 (BEFORE). 항상 존재하고 alpha/마스크만 바뀐다 → 깜빡임 없음 */
+  private beforeSprite: Sprite | null = null;
+  /** 실제 시공 후 사진 */
+  private actualSprite: Sprite | null = null;
+  private actualSource: TextureSource | null = null;
+  /** 분할 모드 좌측(BEFORE) 뷰 */
+  private readonly splitView = new Container();
+  private splitSprite: Sprite | null = null;
+  private readonly sliderMask = new Graphics();
+  private readonly leftMask = new Graphics();
+  private readonly rightMask = new Graphics();
+  private viewMode: ViewMode = "after";
+  private sliderFraction = 0.5;
+  private holdBefore = false;
+  private viewportW = 1;
+  private viewportH = 1;
+  private fade = { alpha: 0, target: 0, from: 0, start: 0, raf: 0 };
   private readonly layers = new Map<string, SurfaceLayer>();
   private readonly imageCache = new Map<string, Promise<DecodedImage>>();
   private readonly whiteSource: CanvasSource;
@@ -132,9 +157,19 @@ export class SceneRenderer {
 
   private constructor(app: Application) {
     this.app = app;
+    this.splitView.visible = false;
+    app.stage.addChild(this.splitView);
     app.stage.addChild(this.world);
     this.world.addChild(this.surfaceRoot);
     this.world.addChild(this.objectRoot);
+    // 마스크는 항상 붙여 두고 사각형 영역만 바꾼다 (붙였다 떼면 Pixi 가 마스크를 일반 렌더로 되돌려 화면이 깨진다)
+    app.stage.addChild(this.leftMask, this.rightMask);
+    this.world.addChild(this.sliderMask);
+    this.world.mask = this.rightMask;
+    this.splitView.mask = this.leftMask;
+    this.viewportW = app.renderer.width;
+    this.viewportH = app.renderer.height;
+    this.updateHalfMasks();
     const white = document.createElement("canvas");
     white.width = 2;
     white.height = 2;
@@ -205,6 +240,30 @@ export class SceneRenderer {
     }
     this.baseSprite.width = this.imageWidth;
     this.baseSprite.height = this.imageHeight;
+
+    // BEFORE 레이어 (world 최상단) + 분할 모드용 복제
+    if (!this.beforeSprite) {
+      this.beforeSprite = new Sprite(texture);
+      this.beforeSprite.alpha = 0;
+      this.beforeSprite.mask = this.sliderMask;
+      this.world.addChild(this.beforeSprite);
+    } else {
+      this.beforeSprite.texture = texture;
+      this.world.addChild(this.beforeSprite); // 최상단 유지
+    }
+    this.beforeSprite.width = this.imageWidth;
+    this.beforeSprite.height = this.imageHeight;
+    if (!this.splitSprite) {
+      this.splitSprite = new Sprite(texture);
+      this.splitView.addChild(this.splitSprite);
+    } else {
+      this.splitSprite.texture = texture;
+    }
+    this.splitSprite.width = this.imageWidth;
+    this.splitSprite.height = this.imageHeight;
+    if (this.actualSprite) this.world.addChild(this.actualSprite);
+    this.applyView(false);
+
     // shading 계산용 래스터
     const small = drawToCanvas(img, SHADING_RASTER_SIZE);
     this.baseRaster = canvasToImageData(small);
@@ -287,25 +346,147 @@ export class SceneRenderer {
   }
 
   // ---------- 카메라 ----------
+  /** 분할 모드에서는 오른쪽 절반이 AFTER 뷰포트가 된다 */
+  private splitOffsetX(): number {
+    return this.viewMode === "split" ? this.viewportW / 2 : 0;
+  }
+
   setCamera(camera: CameraState): void {
     this.camera = camera;
-    this.world.position.set(camera.x, camera.y);
+    this.world.position.set(camera.x + this.splitOffsetX(), camera.y);
     this.world.scale.set(camera.scale);
+    this.splitView.position.set(camera.x, camera.y);
+    this.splitView.scale.set(camera.scale);
+    this.updateSliderMask();
     this.requestRender();
   }
 
   fitCamera(viewW: number, viewH: number, padding = 0.98): CameraState {
     if (this.imageWidth === 0) return this.camera;
-    const scale = Math.min(viewW / this.imageWidth, viewH / this.imageHeight) * padding;
-    const cam = { scale, x: (viewW - this.imageWidth * scale) / 2, y: (viewH - this.imageHeight * scale) / 2 };
+    const w = this.viewMode === "split" ? viewW / 2 : viewW;
+    const scale = Math.min(w / this.imageWidth, viewH / this.imageHeight) * padding;
+    const cam = { scale, x: (w - this.imageWidth * scale) / 2, y: (viewH - this.imageHeight * scale) / 2 };
     this.setCamera(cam);
     return cam;
   }
 
   resize(width: number, height: number): void {
     if (this.destroyed) return;
-    this.app.renderer.resize(Math.max(1, width), Math.max(1, height));
+    this.viewportW = Math.max(1, width);
+    this.viewportH = Math.max(1, height);
+    this.app.renderer.resize(this.viewportW, this.viewportH);
+    this.updateHalfMasks();
+    this.setCamera(this.camera);
+  }
+
+  // ---------- Before / After ----------
+  private updateHalfMasks(): void {
+    const w = this.viewportW;
+    const h = this.viewportH;
+    this.leftMask.clear().rect(0, 0, w / 2, h).fill(0xffffff);
+    // 분할 모드가 아니면 world 마스크는 뷰포트 전체 (= 마스크 없음과 동일)
+    if (this.viewMode === "split") this.rightMask.clear().rect(w / 2, 0, w / 2, h).fill(0xffffff);
+    else this.rightMask.clear().rect(0, 0, w, h).fill(0xffffff);
+  }
+
+  private updateSliderMask(): void {
+    const big = 1e5;
+    if (this.viewMode === "slider" && !this.holdBefore) {
+      const x = (this.sliderFraction * this.viewportW - this.camera.x) / Math.max(1e-6, this.camera.scale);
+      this.sliderMask.clear().rect(-big, -big, Math.max(0, x) + big, 2 * big).fill(0xffffff);
+    } else {
+      this.sliderMask.clear().rect(-big, -big, 2 * big, 2 * big).fill(0xffffff);
+    }
+  }
+
+  setViewMode(mode: ViewMode): void {
+    if (this.viewMode === mode) return;
+    const wasSplit = this.viewMode === "split";
+    this.viewMode = mode;
+    this.applyView(mode === "before" || mode === "after");
+    if (wasSplit !== (mode === "split")) this.setCamera(this.camera);
+  }
+
+  getViewMode(): ViewMode {
+    return this.viewMode;
+  }
+
+  setSliderFraction(fraction: number): void {
+    this.sliderFraction = Math.min(1, Math.max(0, fraction));
+    this.updateSliderMask();
     this.requestRender();
+  }
+
+  /** 스페이스바 홀드: 즉시 BEFORE, 떼면 원래 모드로 (페이드 없음) */
+  setHoldBefore(hold: boolean): void {
+    if (this.holdBefore === hold) return;
+    this.holdBefore = hold;
+    this.applyView(false);
+  }
+
+  /** 실제 시공 후 사진 (있으면 '실제 시공본' 탭) */
+  async setActualImage(url: string | null): Promise<void> {
+    if (!url) {
+      this.actualSprite?.destroy();
+      this.actualSprite = null;
+      this.actualSource?.destroy();
+      this.actualSource = null;
+      this.applyView(false);
+      return;
+    }
+    const img = await loadImage(url);
+    if (this.destroyed) return;
+    this.actualSource?.destroy();
+    this.actualSource = new ImageSource({ resource: img });
+    this.actualSource.style = makeTextureStyle({});
+    const texture = new Texture({ source: this.actualSource });
+    if (!this.actualSprite) {
+      this.actualSprite = new Sprite(texture);
+      this.actualSprite.visible = false;
+      this.world.addChild(this.actualSprite);
+    } else {
+      this.actualSprite.texture = texture;
+    }
+    this.actualSprite.width = this.imageWidth || img.naturalWidth;
+    this.actualSprite.height = this.imageHeight || img.naturalHeight;
+    this.applyView(false);
+  }
+
+  private applyView(animate: boolean): void {
+    const mode = this.viewMode;
+    this.splitView.visible = mode === "split";
+    this.updateHalfMasks();
+    if (this.actualSprite) this.actualSprite.visible = mode === "actual" && !this.holdBefore;
+    if (this.beforeSprite) {
+      const showBefore = this.holdBefore || mode === "before";
+      const target = showBefore ? 1 : mode === "slider" ? 1 : 0;
+      this.fadeTo(target, animate ? FADE_MS : 0);
+    }
+    this.updateSliderMask();
+    this.requestRender();
+  }
+
+  private fadeTo(target: number, duration: number): void {
+    const f = this.fade;
+    cancelAnimationFrame(f.raf);
+    f.target = target;
+    if (duration <= 0 || !this.beforeSprite) {
+      f.alpha = target;
+      if (this.beforeSprite) this.beforeSprite.alpha = target;
+      return;
+    }
+    f.from = f.alpha;
+    f.start = performance.now();
+    const step = () => {
+      if (this.destroyed || !this.beforeSprite) return;
+      const t = Math.min(1, (performance.now() - f.start) / duration);
+      const eased = t * (2 - t);
+      f.alpha = f.from + (f.target - f.from) * eased;
+      this.beforeSprite.alpha = f.alpha;
+      this.requestRender();
+      if (t < 1) f.raf = requestAnimationFrame(step);
+    };
+    f.raf = requestAnimationFrame(step);
   }
 
   // ---------- 표면 ----------
@@ -610,9 +791,11 @@ export class SceneRenderer {
     if (this.destroyed) return;
     this.destroyed = true;
     cancelAnimationFrame(this.raf);
+    cancelAnimationFrame(this.fade.raf);
     for (const layer of this.layers.values()) this.disposeLayer(layer);
     this.layers.clear();
     this.baseSource?.destroy();
+    this.actualSource?.destroy();
     this.whiteSource.destroy();
     this.app.destroy(false, { children: true });
   }
