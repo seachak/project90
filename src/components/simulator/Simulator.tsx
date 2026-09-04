@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, PencilRuler } from "lucide-react";
 import { SimulatorCanvas } from "@/components/canvas/SimulatorCanvas";
 import { EstimatePanel } from "@/components/panels/EstimatePanel";
@@ -9,6 +9,8 @@ import { LayerPanel } from "@/components/panels/LayerPanel";
 import { MaterialLibrary } from "@/components/panels/MaterialLibrary";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { buttonVariants } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
 import type { SceneRenderer } from "@/lib/render/renderer";
 import { materialSourceUrl } from "@/lib/materials/queries";
 import { useProjectStore, type ProjectInfo, type RenderSurface } from "@/store/useProjectStore";
@@ -36,6 +38,7 @@ export interface SimulatorProps {
 export function Simulator({ project, surfaces, materials, tilePlacements, objectPlacements, staticMaterials, mode }: SimulatorProps) {
   const init = useProjectStore((s) => s.init);
   const rendererRef = useRef<SceneRenderer | null>(null);
+  const [shading, setShading] = useState(100);
 
   useEffect(() => {
     init({ project, surfaces, materials: [...materials, ...(staticMaterials ?? [])], tilePlacements, objectPlacements });
@@ -80,7 +83,25 @@ export function Simulator({ project, surfaces, materials, tilePlacements, object
 
         <aside className="order-3 hidden w-72 shrink-0 flex-col border-l lg:flex">
           <div className="flex-1 border-b p-3 text-xs text-muted-foreground">
-            <h3 className="mb-1 font-semibold text-foreground">조명 · 채도</h3>
+            <h3 className="mb-2 font-semibold text-foreground">조명 · 채도</h3>
+            <div className="mb-3 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-foreground">원본 조명 합성 (shading)</Label>
+                <span className="tabular-nums">{shading}%</span>
+              </div>
+              <Slider
+                min={0}
+                max={100}
+                value={shading}
+                onValueChange={(v) => {
+                  const next = Array.isArray(v) ? v[0] : v;
+                  setShading(next);
+                  rendererRef.current?.setShadingStrength(next / 100);
+                }}
+                aria-label="조명 합성 강도"
+              />
+              <p>원본 사진의 명암(그림자·원근 감쇠)을 새 타일 위에 곱합니다. 0 이면 끔.</p>
+            </div>
             밝기 · 노출 · 대비 · 채도 · 색온도 · 프리셋은 Phase 7 에서 제공됩니다.
           </div>
           <EstimatePanel className="max-h-72 overflow-y-auto" />

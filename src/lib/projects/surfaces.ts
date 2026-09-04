@@ -20,7 +20,7 @@ export function surfacePolygon(s: EditableSurface): Point[] {
 }
 
 /** 에디터 표면 → DB 행. 폴리곤이 3점 미만이면 null */
-export function surfaceToRow(projectId: string, s: EditableSurface): SurfaceInsert | null {
+export function surfaceToRow(projectId: string, s: EditableSurface, shadingUrl?: string | null): SurfaceInsert | null {
   const polygon = surfacePolygon(s);
   if (polygon.length < 3) return null;
   const quadAuto = !s.quad || s.quad.length !== 4;
@@ -47,6 +47,7 @@ export function surfaceToRow(projectId: string, s: EditableSurface): SurfaceInse
     real_height_mm: s.real_height_mm,
     z_order: s.z_order,
     editor: JSON.parse(JSON.stringify(editor)),
+    ...(shadingUrl !== undefined ? { shading_url: shadingUrl } : {}),
   };
 }
 
@@ -61,11 +62,12 @@ export async function saveSurfaces(
   projectId: string,
   surfaces: EditableSurface[],
   deletedIds: string[],
+  shadingUrls: Record<string, string | null> = {},
 ): Promise<SaveSurfacesResult> {
   const rows: SurfaceInsert[] = [];
   const skipped: string[] = [];
   for (const s of surfaces) {
-    const row = surfaceToRow(projectId, s);
+    const row = surfaceToRow(projectId, s, s.id in shadingUrls ? shadingUrls[s.id] : undefined);
     if (row) rows.push(row);
     else skipped.push(s.label);
   }

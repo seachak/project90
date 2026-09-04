@@ -25,11 +25,14 @@ import {
   type TextureSource,
 } from "pixi.js";
 import { polygonBounds, type Point } from "@/lib/geometry";
-import { loadImage } from "@/lib/image/loadImage";
+import { canvasToImageData, drawToCanvas, loadImage } from "@/lib/image/loadImage";
+import type { RasterLike } from "@/lib/image/palette";
+import { rasterizePolygon } from "@/lib/mask/rasterize";
 import { applyHomography, homographyFromRect, invertHomography, localScale, type Mat3 } from "@/lib/render/homography";
 import { drawPolygonMask } from "@/lib/render/maskTexture";
 import { choosePxPerMm, drawTilePattern, type PatternRect } from "@/lib/render/patternCanvas";
 import { SURFACE_FRAGMENT, SURFACE_VERTEX } from "@/lib/render/shaders";
+import { computeShading, encodeShading } from "@/lib/render/shading";
 import type { RenderSurface } from "@/store/useProjectStore";
 import type { Material, MaterialMeta } from "@/types/material";
 import type { TilePlacement } from "@/types/placement";
@@ -61,9 +64,13 @@ interface SurfaceLayer {
   geometryKey: string;
   placementKey: string | null;
   generation: number;
+  shadingSource: CanvasSource | ImageSource | null;
+  shadingKey: string;
+  shadingGeneration: number;
 }
 
 const MAX_IMAGE_DECODE = 1024;
+const SHADING_RASTER_SIZE = 1024;
 
 function placementKeyOf(p: TilePlacement, material: Material, pxPerMm: number, rect: PatternRect): string {
   const meta = (material.meta ?? {}) as MaterialMeta;
@@ -106,6 +113,11 @@ export class SceneRenderer {
   readonly objectRoot = new Container();
   private baseSprite: Sprite | null = null;
   private baseSource: TextureSource | null = null;
+  /** shading 계산용 다운스케일 래스터 (≤1024) */
+  private baseRaster: RasterLike | null = null;
+  private baseRasterScale = 1;
+  /** shading 합성 강도 0~1 */
+  private shadingStrength = 1;
   private readonly layers = new Map<string, SurfaceLayer>();
   private readonly imageCache = new Map<string, Promise<DecodedImage>>();
   private readonly whiteSource: CanvasSource;
@@ -193,8 +205,85 @@ export class SceneRenderer {
     }
     this.baseSprite.width = this.imageWidth;
     this.baseSprite.height = this.imageHeight;
-    for (const layer of this.layers.values()) this.updateImageSize(layer);
+    // shading 계산용 래스터
+    const small = drawToCanvas(img, SHADING_RASTER_SIZE);
+    this.baseRaster = canvasToImageData(small);
+    this.baseRasterScale = small.width / this.imageWidth;
+    for (const layer of this.layers.values()) {
+      this.updateImageSize(layer);
+      layer.shadingKey = "";
+      this.updateLayerShading(layer);
+    }
     this.requestRender();
+  }
+
+  /** shading 합성 강도 (0 = 끔, 1 = 원본 조명 그대로) */
+  setShadingStrength(strength: number): void {
+    this.shadingStrength = Math.min(1, Math.max(0, strength));
+    for (const layer of this.layers.values()) {
+      if (!layer.shadingSource) continue;
+      (layer.uniforms.uniforms as Record<string, unknown>).uUseShading = this.shadingStrength;
+      layer.uniforms.update();
+    }
+    this.requestRender();
+  }
+
+  /**
+   * 표면의 shading map 을 준비한다.
+   * surfaces.shading_url 이 있으면 그 PNG 를, 없으면 원본 사진에서 즉석 계산한다.
+   */
+  private updateLayerShading(layer: SurfaceLayer): void {
+    const surface = layer.surface;
+    const key = `${surface.shading_url ?? ""}|${JSON.stringify(surface.polygon)}|${this.baseRaster ? this.baseRaster.width : 0}`;
+    if (layer.shadingKey === key) return;
+    layer.shadingKey = key;
+    const generation = ++layer.shadingGeneration;
+    const apply = (source: CanvasSource | ImageSource) => {
+      if (this.destroyed || layer.shadingGeneration !== generation) {
+        source.destroy();
+        return;
+      }
+      layer.shadingSource?.destroy();
+      layer.shadingSource = source;
+      layer.mesh.shader!.resources.uShading = source;
+      (layer.uniforms.uniforms as Record<string, unknown>).uUseShading = this.shadingStrength;
+      layer.uniforms.update();
+      this.requestRender();
+    };
+
+    if (surface.shading_url) {
+      loadImage(surface.shading_url)
+        .then((img) => {
+          const source = new ImageSource({ resource: img });
+          source.style = makeTextureStyle({});
+          apply(source);
+        })
+        .catch((err) => {
+          console.warn("shading map load failed, computing locally", err);
+          if (layer.shadingGeneration === generation) this.computeLayerShading(layer, generation, apply);
+        });
+      return;
+    }
+    this.computeLayerShading(layer, generation, apply);
+  }
+
+  private computeLayerShading(layer: SurfaceLayer, generation: number, apply: (source: CanvasSource) => void): void {
+    const raster = this.baseRaster;
+    if (!raster) return; // 사진이 로드되면 다시 호출된다
+    // 첫 프레임을 막지 않도록 다음 틱에 계산
+    setTimeout(() => {
+      if (this.destroyed || layer.shadingGeneration !== generation) return;
+      const mask = rasterizePolygon(layer.surface.polygon, raster.width, raster.height, this.baseRasterScale);
+      const result = computeShading(raster, mask);
+      const rgba = encodeShading(result, mask);
+      const canvas = document.createElement("canvas");
+      canvas.width = raster.width;
+      canvas.height = raster.height;
+      canvas.getContext("2d")!.putImageData(new ImageData(rgba, raster.width, raster.height), 0, 0);
+      const source = new CanvasSource({ resource: canvas });
+      source.style = makeTextureStyle({});
+      apply(source);
+    }, 0);
   }
 
   // ---------- 카메라 ----------
@@ -240,6 +329,7 @@ export class SceneRenderer {
       } else {
         layer.surface = surface;
       }
+      this.updateLayerShading(layer);
       this.surfaceRoot.addChild(layer.mesh); // 재추가로 z 순서 정렬
     }
     this.requestRender();
@@ -296,6 +386,9 @@ export class SceneRenderer {
       geometryKey: "",
       placementKey: null,
       generation: 0,
+      shadingSource: null,
+      shadingKey: "",
+      shadingGeneration: 0,
     };
     this.updateLayerGeometry(layer, surface);
     return layer;
@@ -396,10 +489,12 @@ export class SceneRenderer {
   }
 
   private disposeLayer(layer: SurfaceLayer): void {
+    layer.shadingGeneration++;
     layer.mesh.removeFromParent();
     layer.mesh.destroy();
     layer.maskSource.destroy();
     layer.patternSource?.destroy();
+    layer.shadingSource?.destroy();
   }
 
   // ---------- 타일 배치 ----------

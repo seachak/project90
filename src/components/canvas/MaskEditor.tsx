@@ -29,6 +29,7 @@ import type { RasterLike } from "@/lib/image/palette";
 import { maskToPolygon } from "@/lib/mask/contour";
 import { floodFill, smoothMask } from "@/lib/mask/floodFill";
 import { saveSurfaces } from "@/lib/projects/surfaces";
+import { uploadShadingMaps } from "@/lib/render/shadingExport";
 import { createClient } from "@/lib/supabase/client";
 import { DEFAULT_LABELS, type EditableSurface, type SurfaceType } from "@/types/surface";
 
@@ -332,7 +333,24 @@ export function MaskEditor({ projectId, projectName, imageUrl, imageWidth, image
     }
     setSaving(true);
     try {
-      const result = await saveSurfaces(createClient(), projectId, surfaces, deletedIds);
+      const supabase = createClient();
+      // shading map(조명 맵) PNG 캐시 — 실패해도 렌더러가 즉석 계산하므로 저장은 계속한다
+      let shadingUrls: Record<string, string | null> = {};
+      if (raster.current) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) {
+          const valid = surfaces.filter((s) => flattenPath(s.vertices, true).length >= 3);
+          shadingUrls = await uploadShadingMaps(valid, {
+            userId: user.id,
+            projectId,
+            raster: raster.current.data,
+            rasterScale: 1 / raster.current.scale,
+          });
+        }
+      }
+      const result = await saveSurfaces(supabase, projectId, surfaces, deletedIds, shadingUrls);
       setDeletedIds([]);
       setSurfaces((prev) => prev.map((s) => ({ ...s, isNew: false })));
       setDirty(false);

@@ -46,6 +46,12 @@ uniform float uGloss;
 uniform float uUseShading;
 uniform float uDetailStrength;
 
+// 하이라이트 소프트 클립: 0.85 이상은 1.0 에 점근 (흰 타일이 통째로 날아가지 않게)
+vec3 softClip(vec3 c) {
+  vec3 hi = 0.85 + 0.15 * (1.0 - exp(-(c - 0.85) / 0.15));
+  return mix(c, hi, step(0.85, c));
+}
+
 void main() {
   mat3 invH = mat3(uInvH0, uInvH1, uInvH2);
   vec3 q = invH * vec3(vImagePos, 1.0);
@@ -61,13 +67,15 @@ void main() {
   vec4 c = texture(uPattern, uv);
   vec3 rgb = c.rgb;
 
-  if (uUseShading > 0.5) {
+  if (uUseShading > 0.001) {
     vec4 sh = texture(uShading, imgUv);
-    float light = sh.r * 2.0;                    // 0.5 → 1.0
-    float detail = (sh.g - 0.5) * 2.0 * uDetailStrength;
+    float s = clamp(uUseShading, 0.0, 1.0);       // 합성 강도 (1 = 원본 조명 그대로)
+    float light = mix(1.0, sh.r * 2.0, s);        // R: 0.5 → 1.0 배
+    float detail = (sh.g - 0.5) * 2.0 * uDetailStrength * s;
     rgb = rgb * light + detail;
-    float hi = smoothstep(1.05, 1.6, light);      // 유광 하이라이트
-    rgb += uGloss * hi * 0.6;
+    float hi = smoothstep(1.05, 1.6, light);      // 유광: 밝은 영역에 하이라이트
+    rgb += uGloss * hi * 0.6 * s;
+    rgb = softClip(rgb);
   }
 
   float a = m * uOpacity;
