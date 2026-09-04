@@ -43,3 +43,6 @@ next-env.d.ts
 # local env files (keys) - never commit
 .env*.local
 !.env.local.example
+
+# 로컬 미리보기 서버 설정 (머신별 경로 포함)
+.claude/launch.json

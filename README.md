@@ -62,7 +62,29 @@ pnpm dev                            # http://localhost:3000
      승인된 리디렉션 URI 에 `https://jxmwamgfgqqsedhjvpwn.supabase.co/auth/v1/callback` 추가
 4. **Integrations → GitHub** (선택, 마이그레이션 자동화)
    - 저장소 `seachak/project90`, Supabase directory `supabase`, Production branch `main`, Branching 활성화
-5. **타입 재생성** — 스키마를 바꿨다면 `pnpm supabase login` 후 `pnpm db:types`
+5. **샘플 타일 적재 (선택)** — SQL Editor 에서 [`supabase/seed.sql`](supabase/seed.sql) 실행.
+   절차적으로 생성한 타일 텍스처 22종(`public/samples/tiles/`)이 공개 자재로 들어갑니다. 재실행해도 안전합니다(upsert).
+   텍스처를 다시 만들려면 `pnpm samples:gen`.
+6. **타입 재생성** — 스키마를 바꿨다면 `pnpm supabase login` 후 `pnpm db:types`
+
+## 자재 등록 (기능 1)
+
+- `/materials/new` — 종류 선택 → 이미지 드래그&드롭(여러 장) → 자동 분석
+  - 타일: 규격 프리셋, 줄눈 색/두께, 마감(무광 0.05 / 새틴 0.2 / 유광 0.45), **이음매 자동 검사**(가장자리 픽셀 차 ÷ 내부 인접 픽셀 차),
+    이음매가 있으면 거울 반복 / 오프셋 블렌드 보정, 3×3 타일링 미리보기(타일별 ±3% 밝기 변화, 랜덤 90° 회전)
+  - 위생도기: **온디바이스 배경 제거**(@imgly/background-removal, 최초 1회 모델 다운로드), 실패 시 수동 브러시 지우개,
+    실제 치수 W×H×D, 접지점 클릭 지정, 설치 방식(바닥/벽걸이/카운터탑)
+  - 저장 시 원본 → Storage(`textures` / `cutouts`), 서버(sharp)에서 400px WebP 썸네일 → `thumbnails`, 대표색은 k-means 로 자동 추출
+- `/materials` — 종류 탭, 색상 계열 필터, 규격 필터, 검색, 그리드/리스트, 무한 스크롤, 내 자재만 보기
+- **CSV/엑셀 일괄 등록** — 목록 화면의 버튼. 헤더는 한국어/영어 모두 인식하며 템플릿 CSV 를 내려받을 수 있습니다.
+
+  | 컬럼(예) | 설명 |
+  | --- | --- |
+  | 종류 / kind | 바닥타일, 벽타일, 양변기, 세면기, 욕조, 샤워부스, 수전, 액세서리 |
+  | 이름, 브랜드, 모델코드, 가격, 태그(`;` 구분), 공개 | 공통 |
+  | 이미지URL / image_url | 타일은 texture_url, 위생도기는 cutout_url 로 저장 |
+  | 가로mm, 세로mm, 줄눈색, 줄눈두께, 마감(무광/새틴/유광) | 타일 |
+  | 실제폭, 실제높이, 실제깊이, 설치방식(바닥설치/벽걸이/카운터탑) | 위생도기 |
 
 ## 스크립트
 
