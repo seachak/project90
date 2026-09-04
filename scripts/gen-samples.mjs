@@ -408,6 +408,33 @@ on conflict (id) do update set
 `;
   await writeFile(SEED_PATH, sql, "utf8");
   console.log(`wrote ${SEED_PATH} (${rows.length} rows)`);
+
+  // 개발용 매니페스트 (Supabase 없이 /dev/* 라우트에서 자재 목록으로 사용)
+  const manifest = rows.map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    name: r.name,
+    brand: r.brand,
+    model_code: r.model_code,
+    texture_url: r.texture_url,
+    thumbnail_url: r.thumbnail_url,
+    tile_width_mm: r.tw,
+    tile_height_mm: r.th,
+    is_seamless: true,
+    grout_color: r.grout,
+    grout_width_mm: r.grout_width,
+    finish: r.finish,
+    gloss: r.gloss,
+    base_color: r.base_color,
+    price: r.price,
+    currency: "KRW",
+    tags: r.tags,
+    meta: r.meta,
+    is_public: true,
+  }));
+  const manifestPath = path.join(OUT_DIR, "manifest.json");
+  await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+  console.log(`wrote ${manifestPath}`);
 }
 
 main().catch((err) => {

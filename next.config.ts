@@ -11,6 +11,8 @@ const supabaseHost = (() => {
 })();
 
 const nextConfig: NextConfig = {
+  // 개발 서버가 켜진 상태에서 빌드 검증을 할 때 .next 를 덮어쓰지 않도록 분리 가능
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   images: {
     remotePatterns: [
       {

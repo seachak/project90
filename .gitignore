@@ -46,3 +46,4 @@ next-env.d.ts
 
 # 로컬 미리보기 서버 설정 (머신별 경로 포함)
 .claude/launch.json
+/.next-build/
