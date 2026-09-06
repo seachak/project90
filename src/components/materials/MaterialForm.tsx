@@ -26,8 +26,9 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useUser } from "@/hooks/use-user";
-import { isGuestMaterialsEnabled } from "@/lib/env";
-import { canvasToImageData, drawToCanvas, loadImage, rasterToBlob } from "@/lib/image/loadImage";
+import { hasSupabaseEnv, isGuestMaterialsEnabled } from "@/lib/env";
+import { saveLocalMaterial } from "@/lib/materials/localStore";
+import { canvasToBlob, canvasToImageData, drawToCanvas, loadImage, rasterToBlob } from "@/lib/image/loadImage";
 import { dominantColorHex, hueBucketOf, type RasterLike } from "@/lib/image/palette";
 import { removeImageBackground } from "@/lib/image/removeBg";
 import { fetchTagSuggestions } from "@/lib/materials/queries";
@@ -189,6 +190,8 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
   const guestMode = isGuestMaterialsEnabled();
+  /** Supabase 가 없으면 이 브라우저(IndexedDB)에만 저장한다 */
+  const localMode = !hasSupabaseEnv();
   const [shared, setShared] = useState<SharedFields>({ ...INITIAL_SHARED, kind: initialKind });
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -374,7 +377,7 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
   };
 
   const saveDraft = async (draft: Draft): Promise<boolean> => {
-    if (!user && !guestMode) {
+    if (!user && !guestMode && !localMode) {
       toast.error("로그인이 필요합니다.");
       return false;
     }
@@ -424,6 +427,22 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
         owner_id: user?.id ?? null,
         is_public: shared.is_public,
       };
+
+      if (localMode) {
+        // Supabase 가 없다 — 이미지와 메타를 이 브라우저의 IndexedDB 에 넣는다.
+        // 썸네일도 서버(sharp) 대신 캔버스로 만든다.
+        patch(draft.id, { status: "saving", progress: 0.5, error: null });
+        let thumb: Blob | null = null;
+        try {
+          const img = await loadImage(blob);
+          thumb = await canvasToBlob(drawToCanvas(img, 400), "image/webp", 0.9);
+        } catch (err) {
+          console.warn("로컬 썸네일 생성 실패, 원본을 그대로 씁니다", err);
+        }
+        await saveLocalMaterial({ insert, blob, thumb });
+        patch(draft.id, { status: "saved", progress: 1, fullRaster: null });
+        return true;
+      }
 
       if (!user) {
         // 게스트 모드: 브라우저에서 Storage 에 직접 못 쓰므로(RLS) 서버 라우트가 대신 처리한다
@@ -519,7 +538,13 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
         </div>
 
         <ImageDropzone onFiles={addFiles} compact={drafts.length > 0} />
-        {!user && !userLoading && (
+        {localMode && (
+          <p className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-700 dark:text-sky-300">
+            로컬 모드 — Supabase 없이 <strong>이 브라우저에만</strong> 저장됩니다. 등록하면 시뮬레이터 자재
+            목록에 바로 나타납니다. 다른 기기에서는 보이지 않고, 브라우저 사이트 데이터를 지우면 사라집니다.
+          </p>
+        )}
+        {!localMode && !user && !userLoading && (
           guestMode ? (
             <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
               게스트 모드 — 로그인 없이 등록됩니다. 등록한 자재는 <strong>공개 자재</strong>로 저장되며 소유자가 없어
@@ -885,7 +910,7 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
 
         <div className="flex flex-col gap-2">
           {drafts.length > 1 && (
-            <Button size="lg" onClick={saveAll} disabled={savingAll || pendingCount === 0 || (!user && !guestMode)}>
+            <Button size="lg" onClick={saveAll} disabled={savingAll || pendingCount === 0 || (!user && !guestMode && !localMode)}>
               {savingAll && <Loader2 className="size-4 animate-spin" />}
               모두 저장 ({pendingCount}개)
             </Button>
@@ -901,7 +926,7 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
                 if (drafts.length === 1) router.push("/materials");
               }
             }}
-            disabled={!active || active.status === "saved" || active.status === "uploading" || active.status === "saving" || savingAll || (!user && !guestMode)}
+            disabled={!active || active.status === "saved" || active.status === "uploading" || active.status === "saving" || savingAll || (!user && !guestMode && !localMode)}
           >
             {active && (active.status === "uploading" || active.status === "saving") && <Loader2 className="size-4 animate-spin" />}
             {drafts.length > 1 ? "이 자재만 저장" : "저장"}

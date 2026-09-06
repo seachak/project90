@@ -22,6 +22,8 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useUser } from "@/hooks/use-user";
 import { fetchMaterials } from "@/lib/materials/queries";
+import { deleteLocalMaterial, isLocalMaterial, listLocalMaterials } from "@/lib/materials/localStore";
+import { hasSupabaseEnv } from "@/lib/env";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import {
@@ -86,6 +88,15 @@ export function MaterialLibraryView() {
       setLoading(true);
       setError(null);
       try {
+        // Supabase 가 없으면 이 브라우저에 등록한 자재만 보여준다
+        if (!hasSupabaseEnv()) {
+          const all = await listLocalMaterials();
+          if (id !== requestId.current) return;
+          setItems(all);
+          setHasMore(false);
+          setPage(0);
+          return;
+        }
         const supabase = createClient();
         const result = await fetchMaterials(supabase, {
           kind,
@@ -282,7 +293,20 @@ export function MaterialLibraryView() {
         )}
       >
         {items.map((m) => (
-          <MaterialCard key={m.id} material={m} view={view} href={`/materials/${m.id}`} />
+          <MaterialCard
+            key={m.id}
+            material={m}
+            view={view}
+            href={isLocalMaterial(m.id) ? undefined : `/materials/${m.id}`}
+            onSelect={
+              isLocalMaterial(m.id)
+                ? (mat) => {
+                    if (!confirm(`"${mat.name}" 을(를) 이 브라우저에서 삭제할까요?`)) return;
+                    void deleteLocalMaterial(mat.id).then(() => setRefreshKey((k) => k + 1));
+                  }
+                : undefined
+            }
+          />
         ))}
         {loading &&
           Array.from({ length: items.length === 0 ? 12 : 6 }).map((_, i) => (

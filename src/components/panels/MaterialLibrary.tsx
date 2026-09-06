@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Search } from "lucide-react";
 import { MaterialCard } from "@/components/materials/MaterialCard";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchMaterials } from "@/lib/materials/queries";
+import { listLocalMaterials } from "@/lib/materials/localStore";
 import { createClient } from "@/lib/supabase/client";
 import { useProjectStore } from "@/store/useProjectStore";
 import { cn } from "@/lib/utils";
@@ -38,6 +41,21 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const requestId = useRef(0);
+  /** 이 브라우저에 등록한 자재 (Supabase 없이 쓰는 경로) */
+  const [localItems, setLocalItems] = useState<Material[]>([]);
+
+  // 로컬 자재는 항상 함께 보여준다 — 데모 모드에서도 내가 올린 실물 자재를 바로 얹어볼 수 있게
+  useEffect(() => {
+    let active = true;
+    void listLocalMaterials().then((list) => {
+      if (!active) return;
+      setLocalItems(list);
+      if (list.length > 0) upsertMaterials(list);
+    });
+    return () => {
+      active = false;
+    };
+  }, [upsertMaterials]);
 
   // 선택한 표면 종류에 맞춰 탭 자동 전환
   useEffect(() => {
@@ -80,10 +98,14 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
   };
 
   const visible = useMemo(() => {
-    if (!staticMaterials) return items;
     const q = search.trim().toLowerCase();
-    return staticMaterials.filter((m) => m.kind === kind && (!q || m.name.toLowerCase().includes(q) || (m.brand ?? "").toLowerCase().includes(q)));
-  }, [staticMaterials, items, kind, search]);
+    const matches = (m: Material) =>
+      m.kind === kind && (!q || m.name.toLowerCase().includes(q) || (m.brand ?? "").toLowerCase().includes(q));
+    // 내가 등록한 자재를 맨 앞에 (샘플보다 먼저 보이게)
+    const mine = localItems.filter(matches);
+    const rest = staticMaterials ? staticMaterials.filter(matches) : items.filter((m) => !mine.some((x) => x.id === m.id));
+    return [...mine, ...rest];
+  }, [staticMaterials, items, localItems, kind, search]);
 
   const appliedId = tilePlacements.find((p) => p.surface_id === selectedSurfaceId)?.material_id ?? null;
   const tileTab = isTileKind(kind);
@@ -104,7 +126,15 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
           <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="자재 검색" className="h-7 pl-7 text-xs" />
         </div>
-        <p className="mt-2 truncate text-[11px] text-muted-foreground">
+        <div className="mt-2 flex items-center justify-between gap-2">
+          <span className="truncate text-[11px] text-muted-foreground">
+            내 자재 {localItems.length}개
+          </span>
+          <Link href="/materials/new" className="shrink-0 text-[11px] font-medium underline underline-offset-2 hover:text-foreground">
+            + 실물 자재 등록
+          </Link>
+        </div>
+        <p className="mt-1 truncate text-[11px] text-muted-foreground">
           {!tileTab ? (
             "클릭하면 바닥에 놓입니다 — 드래그로 위치를 옮기면 크기가 원근에 맞춰 자동 조절됩니다"
           ) : selectedSurface ? (
