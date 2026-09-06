@@ -84,10 +84,17 @@ interface SurfaceLayer {
   shadingGeneration: number;
 }
 
-const MAX_IMAGE_DECODE = 1024;
+/**
+ * 자재 텍스처 디코딩 상한.
+ * 실물 타일 사진의 결·반점을 살리려면 여기서 뭉개지면 안 된다.
+ * (600각 타일이 벽에서 400~800px 를 차지하는데 소스가 1024면 확대되어 흐려진다.)
+ */
+const MAX_IMAGE_DECODE = 2048;
 const SHADING_RASTER_SIZE = 1024;
-/** 디코딩된 이미지 캐시 상한 (LRU) */
-const IMAGE_CACHE_LIMIT = 32;
+/** 디코딩 이미지 캐시 상한 — 개수가 아니라 대략적인 픽셀 예산으로 잡는다 */
+const IMAGE_CACHE_LIMIT = 24;
+/** 캐시 총 픽셀 예산 (RGBA 4byte 기준 약 384MB 상당) — 큰 텍스처는 적게, 작은 건 많이 담긴다 */
+const IMAGE_CACHE_PIXEL_BUDGET = 96 * 1024 * 1024;
 /** 히트테스트용 알파 그리드 해상도 */
 const ALPHA_PROBE = 64;
 /** 접지 그림자 방사형 그라디언트 텍스처 크기 */
@@ -205,6 +212,8 @@ export class SceneRenderer {
   private readonly imageCache = new Map<string, Promise<DecodedImage>>();
   /** imageCache LRU 순서 (앞 = 가장 오래됨) */
   private readonly imageCacheOrder: string[] = [];
+  /** URL → 디코딩된 픽셀 수 (캐시 예산 계산용) */
+  private readonly imagePixels = new Map<string, number>();
   private readonly whiteSource: CanvasSource;
   private dirty = false;
   private raf = 0;
@@ -261,17 +270,38 @@ export class SceneRenderer {
   }
 
   // ---------- 이미지 ----------
-  /** LRU 순서 갱신 + 상한 초과분 제거 (자재를 많이 훑어봐도 메모리가 무한히 늘지 않게) */
+  /**
+   * LRU 순서 갱신 + 초과분 제거.
+   * 텍스처 해상도를 올렸으므로 개수만 세면 메모리가 튄다 —
+   * 실제 픽셀 수를 합산해 예산을 넘으면 오래된 것부터 버린다.
+   */
   private touchImageCache(url: string): void {
     const i = this.imageCacheOrder.indexOf(url);
     if (i >= 0) this.imageCacheOrder.splice(i, 1);
     this.imageCacheOrder.push(url);
-    while (this.imageCacheOrder.length > IMAGE_CACHE_LIMIT) {
+
+    const evict = (): boolean => {
       const evicted = this.imageCacheOrder.shift();
-      if (evicted === undefined) break;
+      if (evicted === undefined) return false;
       this.imageCache.delete(evicted);
+      this.imagePixels.delete(evicted);
       this.alphaMasks.delete(evicted);
+      return true;
+    };
+
+    while (this.imageCacheOrder.length > IMAGE_CACHE_LIMIT) {
+      if (!evict()) break;
     }
+    // 가장 최근 것 하나는 방금 필요해서 넣은 것이므로 예산 초과여도 남긴다
+    while (this.imageCacheOrder.length > 1 && this.cachedPixels() > IMAGE_CACHE_PIXEL_BUDGET) {
+      if (!evict()) break;
+    }
+  }
+
+  private cachedPixels(): number {
+    let total = 0;
+    for (const url of this.imageCacheOrder) total += this.imagePixels.get(url) ?? 0;
+    return total;
   }
 
   private decodeImage(url: string): Promise<DecodedImage> {
@@ -281,17 +311,26 @@ export class SceneRenderer {
       p = loadImage(url).then((img) => {
         const w = img.naturalWidth;
         const h = img.naturalHeight;
-        if (Math.max(w, h) <= MAX_IMAGE_DECODE) return { source: img, width: w, height: h };
+        if (Math.max(w, h) <= MAX_IMAGE_DECODE) {
+          this.imagePixels.set(url, w * h);
+          return { source: img, width: w, height: h };
+        }
         const s = MAX_IMAGE_DECODE / Math.max(w, h);
         const canvas = document.createElement("canvas");
         canvas.width = Math.round(w * s);
         canvas.height = Math.round(h * s);
-        canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const ctx = canvas.getContext("2d")!;
+        // 축소 시 기본 보간은 계단이 생긴다 — 텍스처 결을 살리려면 고품질 리샘플이 필요하다
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        this.imagePixels.set(url, canvas.width * canvas.height);
         return { source: canvas, width: canvas.width, height: canvas.height };
       });
       this.imageCache.set(url, p);
       p.catch(() => {
         this.imageCache.delete(url);
+        this.imagePixels.delete(url);
         const i = this.imageCacheOrder.indexOf(url);
         if (i >= 0) this.imageCacheOrder.splice(i, 1);
       });
@@ -1172,6 +1211,7 @@ export class SceneRenderer {
     this.objectLayers.clear();
     this.alphaMasks.clear();
     this.imageCache.clear();
+    this.imagePixels.clear();
     this.imageCacheOrder.length = 0;
     this.shadowTexture?.destroy(true);
     this.baseSource?.destroy();

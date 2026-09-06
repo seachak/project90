@@ -80,6 +80,10 @@ export function TilePreview({
             ctx.rect(x, y, tilePxW, tilePxH);
             ctx.clip();
             ctx.translate(x + tilePxW / 2, y + tilePxH / 2);
+            // 시뮬레이터(patternCanvas)와 같은 규칙: ±1.5% 밝기 편차를 filter 로 (색·채도 보존)
+            const delta = (r - 0.5) * 0.03;
+            const canFilter = typeof ctx.filter === "string";
+            if (canFilter) ctx.filter = `brightness(${(1 + delta).toFixed(4)})`;
             if (randomRotate) {
               const quarter = Math.floor(hash(j, i) * 4);
               ctx.rotate((quarter * Math.PI) / 2);
@@ -88,10 +92,22 @@ export function TilePreview({
             } else {
               ctx.drawImage(img, -tilePxW / 2, -tilePxH / 2, tilePxW, tilePxH);
             }
-            // ±3% 밝기 변화
-            const delta = (r - 0.5) * 0.06;
-            ctx.fillStyle = delta >= 0 ? `rgba(255,255,255,${delta})` : `rgba(0,0,0,${-delta})`;
-            ctx.fillRect(-tilePxW, -tilePxH, tilePxW * 2, tilePxH * 2);
+            if (canFilter) ctx.filter = "none";
+            else {
+              ctx.fillStyle = delta >= 0 ? `rgba(255,255,255,${delta})` : `rgba(0,0,0,${-delta})`;
+              ctx.fillRect(-tilePxW, -tilePxH, tilePxW * 2, tilePxH * 2);
+            }
+            // 줄눈 그늘 — 시뮬레이터와 같은 규칙
+            ctx.rotate(0);
+            const band = Math.min(Math.max(groutPx * 0.6, 0.4), Math.min(tilePxW, tilePxH) / 6);
+            if (band > 0 && groutPx > 0) {
+              ctx.setTransform(1, 0, 0, 1, 0, 0);
+              ctx.strokeStyle = "rgba(0,0,0,0.22)";
+              ctx.lineWidth = band;
+              ctx.strokeRect(x + band / 2, y + band / 2, tilePxW - band, tilePxH - band);
+              ctx.strokeStyle = "rgba(0,0,0,0.088)";
+              ctx.strokeRect(x + band * 1.5, y + band * 1.5, tilePxW - band * 3, tilePxH - band * 3);
+            }
             ctx.restore();
           }
         }

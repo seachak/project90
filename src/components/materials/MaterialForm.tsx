@@ -146,9 +146,16 @@ function defaultAnchor(raster: RasterLike): AnchorPoint {
   return { x: (minX + maxX) / 2 / width, y: Math.min(0.995, (maxY + 0.5) / height) };
 }
 
+/**
+ * 이음매 보정(거울/오프셋)에 쓰는 작업용 래스터의 한 변 최대 픽셀.
+ * 보정을 켜면 이 래스터가 곧 업로드되는 텍스처가 되므로, 실물 사진의 결을 잃지 않을 만큼 커야 한다.
+ * (거울 보정은 2배로 커지므로 결과는 최대 4800px)
+ */
+const TILE_WORK_RASTER = 2400;
+
 async function analyzeTile(file: File) {
   const img = await loadImage(file);
-  const full = canvasToImageData(drawToCanvas(img, 1600));
+  const full = canvasToImageData(drawToCanvas(img, TILE_WORK_RASTER));
   const small = canvasToImageData(drawToCanvas(img, 400));
   return {
     fullRaster: full as RasterLike,
@@ -346,7 +353,8 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
     }
     patch(draft.id, { status: "processing" });
     const fixed = applySeamFix(draft.fullRaster, fix);
-    const blob = await rasterToBlob(fixed, "image/webp", 0.92);
+    // 보정본이 그대로 업로드되므로 압축을 세게 걸면 텍스처가 뭉개진다
+    const blob = await rasterToBlob(fixed, "image/webp", 0.96);
     setProcessed(draft.id, blob);
     patch(draft.id, { status: "ready" });
   };
