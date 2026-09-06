@@ -1,14 +1,16 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { hasSupabaseEnv, getSupabaseEnv } from "@/lib/env";
+import { hasSupabaseEnv, getSupabaseEnv, isGuestMaterialsEnabled } from "@/lib/env";
 
 /** 로그인이 필요한 경로 접두어 */
 const PROTECTED_PREFIXES = ["/projects", "/materials"];
 
 function isProtectedPath(pathname: string): boolean {
-  return PROTECTED_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+  // 게스트 자재 등록이 켜져 있으면 /materials 는 로그인 없이 열어 준다
+  const prefixes = isGuestMaterialsEnabled()
+    ? PROTECTED_PREFIXES.filter((p) => p !== "/materials")
+    : PROTECTED_PREFIXES;
+  return prefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 /**

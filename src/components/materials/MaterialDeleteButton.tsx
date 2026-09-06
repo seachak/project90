@@ -15,13 +15,28 @@ import {
 } from "@/components/ui/dialog";
 import { createClient } from "@/lib/supabase/client";
 
-export function MaterialDeleteButton({ id, name }: { id: string; name: string }) {
+export function MaterialDeleteButton({ id, name, guest = false }: { id: string; name: string; guest?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const remove = async () => {
     setBusy(true);
+    // 게스트 자재는 소유자가 없어 RLS 로는 지울 수 없다 — 서버 라우트가 대신 지운다
+    if (guest) {
+      const res = await fetch(`/api/materials/guest?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      const body = (await res.json()) as { error?: string };
+      setBusy(false);
+      if (!res.ok) {
+        toast.error(body.error ?? "삭제 실패");
+        return;
+      }
+      toast.success("자재를 삭제했습니다.");
+      setOpen(false);
+      router.push("/materials");
+      router.refresh();
+      return;
+    }
     const supabase = createClient();
     const { error } = await supabase.from("materials").delete().eq("id", id);
     setBusy(false);

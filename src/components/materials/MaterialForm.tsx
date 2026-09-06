@@ -26,6 +26,7 @@ import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useUser } from "@/hooks/use-user";
+import { isGuestMaterialsEnabled } from "@/lib/env";
 import { canvasToImageData, drawToCanvas, loadImage, rasterToBlob } from "@/lib/image/loadImage";
 import { dominantColorHex, hueBucketOf, type RasterLike } from "@/lib/image/palette";
 import { removeImageBackground } from "@/lib/image/removeBg";
@@ -180,6 +181,7 @@ interface MaterialFormProps {
 export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
+  const guestMode = isGuestMaterialsEnabled();
   const [shared, setShared] = useState<SharedFields>({ ...INITIAL_SHARED, kind: initialKind });
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -364,7 +366,7 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
   };
 
   const saveDraft = async (draft: Draft): Promise<boolean> => {
-    if (!user) {
+    if (!user && !guestMode) {
       toast.error("로그인이 필요합니다.");
       return false;
     }
@@ -376,24 +378,7 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
     const blob = draft.processedBlob ?? draft.file;
     const mime = blob.type || draft.file.type || "image/png";
     const bucket = tile ? "textures" : "cutouts";
-    const path = storagePathFor(user.id, extensionForMime(mime));
     try {
-      const supabase = createClient();
-      patch(draft.id, { status: "uploading", progress: 0, error: null });
-      const { publicUrl } = await uploadWithProgress({
-        bucket,
-        path,
-        file: blob,
-        contentType: mime,
-        onProgress: (f) => patch(draft.id, { progress: f }),
-      });
-      patch(draft.id, { status: "saving" });
-      let thumbnailUrl = publicUrl;
-      try {
-        thumbnailUrl = (await requestThumbnail(bucket, path)).thumbnailUrl;
-      } catch (err) {
-        console.warn("thumbnail failed, falling back to original", err);
-      }
       const finish = shared.finish;
       const meta: MaterialMeta = {
         hue_bucket: draft.baseColor ? (hueBucketOf(draft.baseColor) ?? undefined) : undefined,
@@ -408,9 +393,9 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
         name: draft.name.trim(),
         brand: shared.brand.trim() || null,
         model_code: draft.model_code.trim() || null,
-        texture_url: tile ? publicUrl : null,
-        cutout_url: tile ? null : publicUrl,
-        thumbnail_url: thumbnailUrl,
+        texture_url: null,
+        cutout_url: null,
+        thumbnail_url: null,
         tile_width_mm: tile ? num(shared.tile_width_mm) : null,
         tile_height_mm: tile ? num(shared.tile_height_mm) : null,
         is_seamless: tile ? draft.seamFix !== "none" || (draft.seam?.isSeamless ?? true) : null,
@@ -428,9 +413,45 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
         price: num(draft.price),
         tags: shared.tags,
         meta: JSON.parse(JSON.stringify(meta)),
-        owner_id: user.id,
+        owner_id: user?.id ?? null,
         is_public: shared.is_public,
       };
+
+      if (!user) {
+        // 게스트 모드: 브라우저에서 Storage 에 직접 못 쓰므로(RLS) 서버 라우트가 대신 처리한다
+        patch(draft.id, { status: "uploading", progress: 0.1, error: null });
+        const form = new FormData();
+        form.append("file", new File([blob], `material.${extensionForMime(mime)}`, { type: mime }));
+        form.append("payload", JSON.stringify({ ...insert, __bucket: bucket }));
+        patch(draft.id, { status: "saving", progress: 0.6 });
+        const res = await fetch("/api/materials/guest", { method: "POST", body: form });
+        const body = (await res.json()) as { error?: string };
+        if (!res.ok) throw new Error(body.error ?? "게스트 등록에 실패했습니다.");
+        patch(draft.id, { status: "saved", progress: 1, fullRaster: null });
+        return true;
+      }
+
+      const supabase = createClient();
+      const path = storagePathFor(user.id, extensionForMime(mime));
+      patch(draft.id, { status: "uploading", progress: 0, error: null });
+      const { publicUrl } = await uploadWithProgress({
+        bucket,
+        path,
+        file: blob,
+        contentType: mime,
+        onProgress: (f) => patch(draft.id, { progress: f }),
+      });
+      patch(draft.id, { status: "saving" });
+      let thumbnailUrl = publicUrl;
+      try {
+        thumbnailUrl = (await requestThumbnail(bucket, path)).thumbnailUrl;
+      } catch (err) {
+        console.warn("thumbnail failed, falling back to original", err);
+      }
+      insert.texture_url = tile ? publicUrl : null;
+      insert.cutout_url = tile ? null : publicUrl;
+      insert.thumbnail_url = thumbnailUrl;
+
       const { error } = await supabase.from("materials").insert(insert);
       if (error) throw error;
       patch(draft.id, { status: "saved", progress: 1, fullRaster: null });
@@ -491,9 +512,16 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
 
         <ImageDropzone onFiles={addFiles} compact={drafts.length > 0} />
         {!user && !userLoading && (
-          <p className="text-sm text-destructive">
-            이미지 분석·미리보기는 바로 사용할 수 있지만, 저장하려면 로그인이 필요합니다.
-          </p>
+          guestMode ? (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+              게스트 모드 — 로그인 없이 등록됩니다. 등록한 자재는 <strong>공개 자재</strong>로 저장되며 소유자가 없어
+              나중에 로그인해도 &ldquo;내 자재&rdquo;로 잡히지 않습니다. 임시 확인용으로만 쓰세요.
+            </p>
+          ) : (
+            <p className="text-sm text-destructive">
+              이미지 분석·미리보기는 바로 사용할 수 있지만, 저장하려면 로그인이 필요합니다.
+            </p>
+          )
         )}
 
         {drafts.length > 1 && (
@@ -849,7 +877,7 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
 
         <div className="flex flex-col gap-2">
           {drafts.length > 1 && (
-            <Button size="lg" onClick={saveAll} disabled={savingAll || pendingCount === 0 || !user}>
+            <Button size="lg" onClick={saveAll} disabled={savingAll || pendingCount === 0 || (!user && !guestMode)}>
               {savingAll && <Loader2 className="size-4 animate-spin" />}
               모두 저장 ({pendingCount}개)
             </Button>
@@ -865,7 +893,7 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
                 if (drafts.length === 1) router.push("/materials");
               }
             }}
-            disabled={!active || active.status === "saved" || active.status === "uploading" || active.status === "saving" || savingAll || !user}
+            disabled={!active || active.status === "saved" || active.status === "uploading" || active.status === "saving" || savingAll || (!user && !guestMode)}
           >
             {active && (active.status === "uploading" || active.status === "saving") && <Loader2 className="size-4 animate-spin" />}
             {drafts.length > 1 ? "이 자재만 저장" : "저장"}

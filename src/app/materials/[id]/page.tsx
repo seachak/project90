@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { AppHeader } from "@/components/app-header";
 import { MaterialDeleteButton } from "@/components/materials/MaterialDeleteButton";
+import { isGuestMaterialsEnabled } from "@/lib/env";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { formatPrice, materialSourceUrl } from "@/lib/materials/queries";
@@ -36,6 +37,7 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
   const image = materialSourceUrl(material);
   const meta = (material.meta ?? {}) as MaterialMeta;
   const isOwner = Boolean(auth.user && material.owner_id === auth.user.id);
+  const guestMode = isGuestMaterialsEnabled();
   const finishLabel = FINISH_OPTIONS.find((f) => f.value === material.finish)?.label ?? material.finish;
   const mountLabel = MOUNT_OPTIONS.find((m) => m.value === material.mount_type)?.label ?? material.mount_type;
 
@@ -101,7 +103,18 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
               </div>
             )}
             {!isOwner && material.owner_id === null && (
-              <p className="text-xs text-muted-foreground">샘플 자재입니다.</p>
+              guestMode ? (
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    소유자가 없는 자재입니다 (샘플 또는 게스트 등록). 게스트 모드에서는 삭제할 수 있습니다.
+                  </p>
+                  <div className="flex gap-2">
+                    <MaterialDeleteButton id={material.id} name={material.name} guest />
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-muted-foreground">샘플 자재입니다.</p>
+              )
             )}
             <Link href={`/materials/new?kind=${material.kind}`} className={cn(buttonVariants({ variant: "outline" }), "w-fit")}>
               같은 종류 자재 등록
