@@ -10,6 +10,8 @@ import { LayerPanel } from "@/components/panels/LayerPanel";
 import { MaterialLibrary } from "@/components/panels/MaterialLibrary";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useSimulatorShortcuts } from "@/hooks/use-simulator-shortcuts";
+import { useAutosave } from "@/hooks/use-autosave";
+import { SimulatorActions } from "@/components/simulator/SimulatorActions";
 import { SceneControls } from "@/components/panels/SceneControls";
 import { buttonVariants } from "@/components/ui/button";
 import type { SceneSettings } from "@/lib/render/colorGrade";
@@ -47,6 +49,7 @@ export function Simulator({ project, surfaces, materials, tilePlacements, object
   const rendererRef = useRef<SceneRenderer | null>(null);
   const setHasActual = useViewerStore((s) => s.setHasActual);
   useSimulatorShortcuts();
+  const autosave = useAutosave(mode === "supabase");
 
   useEffect(() => {
     init({ project, surfaces, materials: [...materials, ...(staticMaterials ?? [])], tilePlacements, objectPlacements });
@@ -64,6 +67,13 @@ export function Simulator({ project, surfaces, materials, tilePlacements, object
         <span className="truncate text-sm font-medium">{project.name}</span>
         <ViewModeBar className="ml-2" />
         <div className="ml-auto flex items-center gap-2">
+          <SimulatorActions
+            mode={mode}
+            getRenderer={() => rendererRef.current}
+            saveStatus={autosave.status}
+            savedAt={autosave.savedAt}
+            onSaveNow={autosave.saveNow}
+          />
           {mode === "supabase" && (
             <Link href={`/projects/${project.id}/mask`} className={cn(buttonVariants({ variant: "outline", size: "sm" }))}>
               <PencilRuler className="size-4" data-icon="inline-start" />

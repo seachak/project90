@@ -197,6 +197,8 @@ export class SceneRenderer {
   private readonly objectLayers = new Map<string, ObjectLayer>();
   private readonly selectionBox = new Graphics();
   private selectedObjectId: string | null = null;
+  /** 내보내기 중에는 선택 테두리를 그리지 않는다 */
+  private exporting = false;
   private shadowTexture: Texture | null = null;
   /** 히트테스트용 컷아웃 알파 그리드 (URL → ALPHA_PROBE² Uint8Array) */
   private readonly alphaMasks = new Map<string, Uint8Array>();
@@ -1069,7 +1071,7 @@ export class SceneRenderer {
     if (this.selectionBox.parent !== this.objectRoot) this.objectRoot.addChild(this.selectionBox);
     this.objectRoot.setChildIndex(this.selectionBox, this.objectRoot.children.length - 1);
     this.selectionBox.clear();
-    const layer = this.selectedObjectId ? this.objectLayers.get(this.selectedObjectId) : null;
+    const layer = this.selectedObjectId && !this.exporting ? this.objectLayers.get(this.selectedObjectId) : null;
     const geo = layer?.geometry;
     if (!geo) {
       this.selectionBox.visible = false;
@@ -1085,9 +1087,10 @@ export class SceneRenderer {
       .stroke({ width: 2 / Math.max(0.01, this.camera.scale), color: 0x38bdf8, alpha: 0.95 });
   }
 
-  /** 내보내기 등에서 선택 표시를 잠시 감춘다 */
+  /** 내보내기 동안 선택 표시를 감춘다 (카메라를 되돌리면 updateSelectionBox 가 다시 그리므로 플래그로 막는다) */
   private setSelectionVisible(visible: boolean): void {
-    this.selectionBox.visible = visible && Boolean(this.selectedObjectId);
+    this.exporting = !visible;
+    this.updateSelectionBox();
   }
 
   private disposeObjectLayer(layer: ObjectLayer): void {

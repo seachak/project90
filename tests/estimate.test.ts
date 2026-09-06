@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildEstimate, formatKRW, m2ToPyeong } from "@/lib/estimate";
+import { buildEstimate, coverageRatio, formatKRW, m2ToPyeong } from "@/lib/estimate";
+import type { Point } from "@/lib/geometry";
+import { applyHomography, homographyFromRect } from "@/lib/render/homography";
 import type { Material } from "@/types/material";
 import type { TilePlacement } from "@/types/placement";
 
@@ -98,5 +100,65 @@ describe("단위", () => {
   });
   it("원화 포맷", () => {
     expect(formatKRW(1234567)).toMatch(/1,234,567/);
+  });
+});
+
+describe("coverageRatio — 실제 시공 면적 보정", () => {
+  // 3000×3000mm 바닥이 원근으로 찍힌 사다리꼴
+  const QUAD: Point[] = [
+    [400, 850],
+    [1200, 850],
+    [1600, 1200],
+    [0, 1200],
+  ];
+
+  it("폴리곤이 quad 와 같으면 비율 1", () => {
+    const ratio = coverageRatio({ id: "f", label: "바닥", real_width_mm: 3000, real_height_mm: 3000, polygon: QUAD, quad: QUAD });
+    expect(ratio).toBeCloseTo(1, 6);
+  });
+
+  it("폴리곤·quad 가 없으면 기존 동작(1)을 유지한다", () => {
+    expect(coverageRatio({ id: "f", label: "바닥", real_width_mm: 3000, real_height_mm: 3000 })).toBe(1);
+  });
+
+  it("ㄱ자로 파인 바닥은 1보다 작은 비율이 나온다", () => {
+    // quad 의 왼쪽 절반·아래 절반을 도려낸 ㄱ자 폴리곤 (mm 평면에서 3/4 면적)
+    const H = homographyFromRect(3000, 3000, QUAD);
+    const lshapeMm: Point[] = [
+      [0, 0],
+      [3000, 0],
+      [3000, 3000],
+      [1500, 3000],
+      [1500, 1500],
+      [0, 1500],
+    ];
+    const polygon = lshapeMm.map((p) => applyHomography(H, p));
+    const ratio = coverageRatio({ id: "f", label: "바닥", real_width_mm: 3000, real_height_mm: 3000, polygon, quad: QUAD });
+    expect(ratio).toBeCloseTo(0.75, 3);
+  });
+
+  it("면적 보정이 매수·금액에 반영된다", () => {
+    const H = homographyFromRect(3000, 3000, QUAD);
+    const halfMm: Point[] = [
+      [0, 0],
+      [3000, 0],
+      [3000, 1500],
+      [0, 1500],
+    ];
+    const polygon = halfMm.map((p) => applyHomography(H, p));
+    const materials: Record<string, Material> = {
+      m1: tile({ id: "m1", price: 20000 }),
+    };
+    const placements: TilePlacement[] = [
+      { id: "p1", surface_id: "f", material_id: "m1", pattern: "grid", offset_x_mm: 0, offset_y_mm: 0, rotate_deg: 0, grout_override: null, z_order: 0 },
+    ];
+    const full = buildEstimate([{ id: "f", label: "바닥", real_width_mm: 3000, real_height_mm: 3000 }], placements, materials);
+    const half = buildEstimate(
+      [{ id: "f", label: "바닥", real_width_mm: 3000, real_height_mm: 3000, polygon, quad: QUAD }],
+      placements,
+      materials,
+    );
+    expect(half.lines[0].areaM2).toBeCloseTo(full.lines[0].areaM2 / 2, 3);
+    expect(half.totalPrice).toBeLessThan(full.totalPrice);
   });
 });
