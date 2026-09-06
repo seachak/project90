@@ -9,6 +9,7 @@ import { EstimatePanel } from "@/components/panels/EstimatePanel";
 import { LayerPanel } from "@/components/panels/LayerPanel";
 import { MaterialLibrary } from "@/components/panels/MaterialLibrary";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useSimulatorShortcuts } from "@/hooks/use-simulator-shortcuts";
 import { SceneControls } from "@/components/panels/SceneControls";
 import { buttonVariants } from "@/components/ui/button";
 import type { SceneSettings } from "@/lib/render/colorGrade";
@@ -45,6 +46,7 @@ export function Simulator({ project, surfaces, materials, tilePlacements, object
   const initScene = useSceneStore((s) => s.init);
   const rendererRef = useRef<SceneRenderer | null>(null);
   const setHasActual = useViewerStore((s) => s.setHasActual);
+  useSimulatorShortcuts();
 
   useEffect(() => {
     init({ project, surfaces, materials: [...materials, ...(staticMaterials ?? [])], tilePlacements, objectPlacements });

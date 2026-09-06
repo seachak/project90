@@ -9,7 +9,7 @@ import { fetchMaterials } from "@/lib/materials/queries";
 import { createClient } from "@/lib/supabase/client";
 import { useProjectStore } from "@/store/useProjectStore";
 import { cn } from "@/lib/utils";
-import { KIND_LABELS, isTileKind, type Material, type MaterialKind } from "@/types/material";
+import { KIND_LABELS, isObjectKind, isTileKind, type Material, type MaterialKind } from "@/types/material";
 
 interface MaterialLibraryProps {
   /** 데모 모드: 정적 자재 목록. 없으면 Supabase 에서 조회 */
@@ -26,6 +26,7 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
   const surfaces = useProjectStore((s) => s.surfaces);
   const tilePlacements = useProjectStore((s) => s.tilePlacements);
   const applyTile = useProjectStore((s) => s.applyTile);
+  const applyObject = useProjectStore((s) => s.applyObject);
   const setHover = useProjectStore((s) => s.setHoverMaterial);
   const upsertMaterials = useProjectStore((s) => s.upsertMaterials);
 
@@ -93,7 +94,7 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
         <Tabs value={kind} onValueChange={(v) => setKind(v as MaterialKind)}>
           <TabsList variant="line" className="h-auto w-full flex-wrap justify-start">
             {KINDS.map((k) => (
-              <TabsTrigger key={k} value={k} className="px-1.5 text-xs" disabled={!isTileKind(k)} title={!isTileKind(k) ? "위생도기 배치는 Phase 8 에서 제공" : undefined}>
+              <TabsTrigger key={k} value={k} className="px-1.5 text-xs">
                 {KIND_LABELS[k]}
               </TabsTrigger>
             ))}
@@ -104,7 +105,9 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="자재 검색" className="h-7 pl-7 text-xs" />
         </div>
         <p className="mt-2 truncate text-[11px] text-muted-foreground">
-          {selectedSurface ? (
+          {!tileTab ? (
+            "클릭하면 바닥에 놓입니다 — 드래그로 위치를 옮기면 크기가 원근에 맞춰 자동 조절됩니다"
+          ) : selectedSurface ? (
             <>
               적용 대상: <span className="font-medium text-foreground">{selectedSurface.label}</span> — 클릭 적용 · 호버 미리보기
             </>
@@ -117,7 +120,7 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
       <div className="min-h-0 flex-1 overflow-y-auto p-2" onMouseLeave={() => setHover(null)}>
         {visible.length === 0 && !loading && (
           <p className="p-4 text-center text-xs text-muted-foreground">
-            {tileTab ? "이 종류의 자재가 없습니다. 자재 라이브러리에서 등록하거나 seed.sql 을 적용하세요." : "위생도기 배치는 다음 단계에서 제공됩니다."}
+            이 종류의 자재가 없습니다. 자재 라이브러리에서 등록하거나 seed.sql 을 적용하세요.
           </p>
         )}
         <div className="grid grid-cols-2 gap-2">
@@ -128,13 +131,13 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
               view="grid"
               selected={m.id === appliedId}
               onSelect={(mat) => {
-                if (!isTileKind(mat.kind)) return;
-                applyTile(mat);
+                if (isTileKind(mat.kind)) applyTile(mat);
+                else if (isObjectKind(mat.kind)) applyObject(mat);
               }}
               onHoverStart={(mat) => {
-                if (!isTileKind(mat.kind)) return;
                 onPreload?.(mat);
-                setHover(mat.id);
+                // 호버 미리보기는 타일만 (도기는 클릭해야 배치된다)
+                if (isTileKind(mat.kind)) setHover(mat.id);
               }}
               onHoverEnd={() => setHover(null)}
               className="cursor-pointer"

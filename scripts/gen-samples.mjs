@@ -8,8 +8,10 @@
 import sharp from "sharp";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { FIXTURES, fixtureSvg } from "./fixtures-svg.mjs";
 
 const OUT_DIR = path.resolve("public/samples/tiles");
+const FIXTURE_DIR = path.resolve("public/samples/fixtures");
 const SEED_PATH = path.resolve("supabase/seed.sql");
 
 // ---------- 난수 / 노이즈 ----------
@@ -308,6 +310,14 @@ function sqlString(s) {
   return `'${String(s).replace(/'/g, "''")}'`;
 }
 
+function sqlOrNull(s) {
+  return s === null || s === undefined ? "null" : sqlString(s);
+}
+
+function numOrNull(n) {
+  return n === null || n === undefined ? "null" : String(n);
+}
+
 async function main() {
   await mkdir(OUT_DIR, { recursive: true });
   const rows = [];
@@ -343,8 +353,55 @@ async function main() {
       price: spec.price,
       tags: spec.tags,
       meta,
+      cutout_url: null,
+      anchor_x: null,
+      anchor_y: null,
+      real_width_mm: null,
+      real_height_mm: null,
+      real_depth_mm: null,
+      mount_type: null,
     });
     console.log(`generated ${file} (${spec.w}×${spec.h}) base=${baseColor} ${meta.hue_bucket}`);
+  }
+
+  // ---------- 위생도기 컷아웃 (알파 PNG) ----------
+  await mkdir(FIXTURE_DIR, { recursive: true });
+  let fixtureCount = 0;
+  for (const spec of FIXTURES) {
+    const file = `${spec.file}.png`;
+    const buffer = await sharp(Buffer.from(fixtureSvg(spec)))
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    await writeFile(path.join(FIXTURE_DIR, file), buffer);
+    const { width, height } = await sharp(buffer).metadata();
+    rows.push({
+      id: uuidFor(spec.id),
+      kind: spec.kind,
+      name: spec.name,
+      brand: "샘플",
+      model_code: `SMP-${String(spec.id).padStart(3, "0")}`,
+      texture_url: null,
+      thumbnail_url: `/samples/fixtures/${file}`,
+      tw: null,
+      th: null,
+      grout: null,
+      grout_width: null,
+      finish: "glossy",
+      gloss: GLOSS.glossy,
+      base_color: "#eef0f1",
+      price: spec.price,
+      tags: spec.tags,
+      meta: { sample: true, source_width: width, source_height: height },
+      cutout_url: `/samples/fixtures/${file}`,
+      anchor_x: spec.anchor_x,
+      anchor_y: spec.anchor_y,
+      real_width_mm: spec.real_width_mm,
+      real_height_mm: spec.real_height_mm,
+      real_depth_mm: spec.real_depth_mm,
+      mount_type: spec.mount,
+    });
+    fixtureCount++;
+    console.log(`generated ${file} (${width}×${height}) ${spec.real_width_mm}mm ${spec.mount}`);
   }
 
   const values = rows
@@ -356,13 +413,13 @@ async function main() {
           sqlString(r.name),
           sqlString(r.brand),
           sqlString(r.model_code),
-          sqlString(r.texture_url),
-          sqlString(r.thumbnail_url),
-          r.tw,
-          r.th,
+          sqlOrNull(r.texture_url),
+          sqlOrNull(r.thumbnail_url),
+          numOrNull(r.tw),
+          numOrNull(r.th),
           "true",
-          sqlString(r.grout),
-          r.grout_width,
+          sqlOrNull(r.grout),
+          numOrNull(r.grout_width),
           sqlString(r.finish),
           r.gloss,
           sqlString(r.base_color),
@@ -370,20 +427,29 @@ async function main() {
           `array[${r.tags.map(sqlString).join(",")}]::text[]`,
           `${sqlString(JSON.stringify(r.meta))}::jsonb`,
           "true",
+          sqlOrNull(r.cutout_url),
+          numOrNull(r.anchor_x),
+          numOrNull(r.anchor_y),
+          numOrNull(r.real_width_mm),
+          numOrNull(r.real_height_mm),
+          numOrNull(r.real_depth_mm),
+          sqlOrNull(r.mount_type),
         ].join(", ")})`,
     )
     .join(",\n");
 
   const sql = `-- =====================================================================
--- project90 seed — 샘플 타일 ${rows.length}종
+-- project90 seed — 샘플 타일 ${rows.length - fixtureCount}종 + 위생도기 ${fixtureCount}종
 -- scripts/gen-samples.mjs 가 생성한 파일. 직접 수정하지 말고 스크립트를 고치세요.
--- 텍스처는 public/samples/tiles/ 에 있으며 앱 도메인 기준 상대 경로로 참조한다.
+-- 텍스처는 public/samples/tiles/, 도기 컷아웃은 public/samples/fixtures/ 에 있으며
+-- 앱 도메인 기준 상대 경로로 참조한다.
 -- 재실행해도 안전하다 (id 고정, upsert).
 -- =====================================================================
 insert into public.materials
   (id, kind, name, brand, model_code, texture_url, thumbnail_url,
    tile_width_mm, tile_height_mm, is_seamless, grout_color, grout_width_mm,
-   finish, gloss, base_color, price, tags, meta, is_public)
+   finish, gloss, base_color, price, tags, meta, is_public,
+   cutout_url, anchor_x, anchor_y, real_width_mm, real_height_mm, real_depth_mm, mount_type)
 values
 ${values}
 on conflict (id) do update set
@@ -404,7 +470,14 @@ on conflict (id) do update set
   price = excluded.price,
   tags = excluded.tags,
   meta = excluded.meta,
-  is_public = excluded.is_public;
+  is_public = excluded.is_public,
+  cutout_url = excluded.cutout_url,
+  anchor_x = excluded.anchor_x,
+  anchor_y = excluded.anchor_y,
+  real_width_mm = excluded.real_width_mm,
+  real_height_mm = excluded.real_height_mm,
+  real_depth_mm = excluded.real_depth_mm,
+  mount_type = excluded.mount_type;
 `;
   await writeFile(SEED_PATH, sql, "utf8");
   console.log(`wrote ${SEED_PATH} (${rows.length} rows)`);
@@ -431,6 +504,13 @@ on conflict (id) do update set
     tags: r.tags,
     meta: r.meta,
     is_public: true,
+    cutout_url: r.cutout_url,
+    anchor_x: r.anchor_x,
+    anchor_y: r.anchor_y,
+    real_width_mm: r.real_width_mm,
+    real_height_mm: r.real_height_mm,
+    real_depth_mm: r.real_depth_mm,
+    mount_type: r.mount_type,
   }));
   const manifestPath = path.join(OUT_DIR, "manifest.json");
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");

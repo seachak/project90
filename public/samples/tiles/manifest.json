@@ -29,7 +29,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000002",
@@ -60,7 +67,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000003",
@@ -92,7 +106,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000004",
@@ -124,7 +145,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000005",
@@ -156,7 +184,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000006",
@@ -189,7 +224,14 @@
       "source_width": 384,
       "source_height": 768
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000007",
@@ -220,7 +262,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000008",
@@ -252,7 +301,14 @@
       "source_width": 384,
       "source_height": 768
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000009",
@@ -284,7 +340,14 @@
       "source_width": 128,
       "source_height": 768
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000010",
@@ -316,7 +379,14 @@
       "source_width": 128,
       "source_height": 768
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000011",
@@ -348,7 +418,14 @@
       "source_width": 512,
       "source_height": 256
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000012",
@@ -380,7 +457,14 @@
       "source_width": 768,
       "source_height": 256
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000013",
@@ -411,7 +495,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000014",
@@ -443,7 +534,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000015",
@@ -475,7 +573,14 @@
       "source_width": 256,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000016",
@@ -507,7 +612,14 @@
       "source_width": 256,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000017",
@@ -539,7 +651,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000018",
@@ -571,7 +690,14 @@
       "source_width": 256,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000019",
@@ -603,7 +729,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000020",
@@ -635,7 +768,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000021",
@@ -667,7 +807,14 @@
       "source_width": 512,
       "source_height": 512
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
   },
   {
     "id": "00000000-0000-4000-8000-000000000022",
@@ -700,6 +847,198 @@
       "source_width": 384,
       "source_height": 768
     },
-    "is_public": true
+    "is_public": true,
+    "cutout_url": null,
+    "anchor_x": null,
+    "anchor_y": null,
+    "real_width_mm": null,
+    "real_height_mm": null,
+    "real_depth_mm": null,
+    "mount_type": null
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000051",
+    "kind": "toilet",
+    "name": "원피스 양변기 화이트",
+    "brand": "샘플",
+    "model_code": "SMP-051",
+    "texture_url": null,
+    "thumbnail_url": "/samples/fixtures/toilet-white.png",
+    "tile_width_mm": null,
+    "tile_height_mm": null,
+    "is_seamless": true,
+    "grout_color": null,
+    "grout_width_mm": null,
+    "finish": "glossy",
+    "gloss": 0.45,
+    "base_color": "#eef0f1",
+    "price": 320000,
+    "currency": "KRW",
+    "tags": [
+      "양변기",
+      "원피스",
+      "화이트"
+    ],
+    "meta": {
+      "sample": true,
+      "source_width": 420,
+      "source_height": 720
+    },
+    "is_public": true,
+    "cutout_url": "/samples/fixtures/toilet-white.png",
+    "anchor_x": 0.5,
+    "anchor_y": 0.985,
+    "real_width_mm": 380,
+    "real_height_mm": 760,
+    "real_depth_mm": 700,
+    "mount_type": "floor"
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000052",
+    "kind": "basin",
+    "name": "벽걸이 세면기 600",
+    "brand": "샘플",
+    "model_code": "SMP-052",
+    "texture_url": null,
+    "thumbnail_url": "/samples/fixtures/basin-wall.png",
+    "tile_width_mm": null,
+    "tile_height_mm": null,
+    "is_seamless": true,
+    "grout_color": null,
+    "grout_width_mm": null,
+    "finish": "glossy",
+    "gloss": 0.45,
+    "base_color": "#eef0f1",
+    "price": 210000,
+    "currency": "KRW",
+    "tags": [
+      "세면기",
+      "벽걸이",
+      "화이트"
+    ],
+    "meta": {
+      "sample": true,
+      "source_width": 620,
+      "source_height": 380
+    },
+    "is_public": true,
+    "cutout_url": "/samples/fixtures/basin-wall.png",
+    "anchor_x": 0.5,
+    "anchor_y": 0.9,
+    "real_width_mm": 600,
+    "real_height_mm": 370,
+    "real_depth_mm": 450,
+    "mount_type": "wall"
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000053",
+    "kind": "bathtub",
+    "name": "매립형 욕조 1700",
+    "brand": "샘플",
+    "model_code": "SMP-053",
+    "texture_url": null,
+    "thumbnail_url": "/samples/fixtures/bathtub-white.png",
+    "tile_width_mm": null,
+    "tile_height_mm": null,
+    "is_seamless": true,
+    "grout_color": null,
+    "grout_width_mm": null,
+    "finish": "glossy",
+    "gloss": 0.45,
+    "base_color": "#eef0f1",
+    "price": 680000,
+    "currency": "KRW",
+    "tags": [
+      "욕조",
+      "1700",
+      "화이트"
+    ],
+    "meta": {
+      "sample": true,
+      "source_width": 900,
+      "source_height": 340
+    },
+    "is_public": true,
+    "cutout_url": "/samples/fixtures/bathtub-white.png",
+    "anchor_x": 0.5,
+    "anchor_y": 0.97,
+    "real_width_mm": 1700,
+    "real_height_mm": 600,
+    "real_depth_mm": 750,
+    "mount_type": "floor"
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000054",
+    "kind": "faucet",
+    "name": "벽붙이 수전 크롬",
+    "brand": "샘플",
+    "model_code": "SMP-054",
+    "texture_url": null,
+    "thumbnail_url": "/samples/fixtures/faucet-chrome.png",
+    "tile_width_mm": null,
+    "tile_height_mm": null,
+    "is_seamless": true,
+    "grout_color": null,
+    "grout_width_mm": null,
+    "finish": "glossy",
+    "gloss": 0.45,
+    "base_color": "#eef0f1",
+    "price": 89000,
+    "currency": "KRW",
+    "tags": [
+      "수전",
+      "크롬",
+      "벽붙이"
+    ],
+    "meta": {
+      "sample": true,
+      "source_width": 260,
+      "source_height": 300
+    },
+    "is_public": true,
+    "cutout_url": "/samples/fixtures/faucet-chrome.png",
+    "anchor_x": 0.2,
+    "anchor_y": 0.5,
+    "real_width_mm": 220,
+    "real_height_mm": 250,
+    "real_depth_mm": 180,
+    "mount_type": "wall"
+  },
+  {
+    "id": "00000000-0000-4000-8000-000000000055",
+    "kind": "shower",
+    "name": "해바라기 샤워 세트",
+    "brand": "샘플",
+    "model_code": "SMP-055",
+    "texture_url": null,
+    "thumbnail_url": "/samples/fixtures/shower-rain.png",
+    "tile_width_mm": null,
+    "tile_height_mm": null,
+    "is_seamless": true,
+    "grout_color": null,
+    "grout_width_mm": null,
+    "finish": "glossy",
+    "gloss": 0.45,
+    "base_color": "#eef0f1",
+    "price": 240000,
+    "currency": "KRW",
+    "tags": [
+      "샤워",
+      "해바라기",
+      "크롬"
+    ],
+    "meta": {
+      "sample": true,
+      "source_width": 300,
+      "source_height": 620
+    },
+    "is_public": true,
+    "cutout_url": "/samples/fixtures/shower-rain.png",
+    "anchor_x": 0.5,
+    "anchor_y": 0.08,
+    "real_width_mm": 300,
+    "real_height_mm": 1250,
+    "real_depth_mm": 380,
+    "mount_type": "wall"
   }
 ]

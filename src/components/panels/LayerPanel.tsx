@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { ObjectPanel } from "@/components/panels/ObjectPanel";
 import { materialImageUrl } from "@/lib/materials/queries";
 import { useProjectStore } from "@/store/useProjectStore";
 import { cn } from "@/lib/utils";
@@ -21,6 +22,9 @@ export function LayerPanel({ className }: { className?: string }) {
   const materials = useProjectStore((s) => s.materials);
   const update = useProjectStore((s) => s.updateTilePlacement);
   const remove = useProjectStore((s) => s.removeTilePlacement);
+  const objects = useProjectStore((s) => s.objectPlacements);
+  const selectedObjectId = useProjectStore((s) => s.selectedObjectId);
+  const selectObject = useProjectStore((s) => s.selectObject);
 
   const placement = placements.find((p) => p.surface_id === selectedId) ?? null;
   const material = placement ? materials[placement.material_id] : null;
@@ -55,9 +59,35 @@ export function LayerPanel({ className }: { className?: string }) {
             </button>
           );
         })}
+        {objects.length > 0 && <span className="mx-1 h-4 w-px shrink-0 bg-border" />}
+        {objects.map((o) => {
+          const m = materials[o.material_id];
+          const thumb = m ? materialImageUrl(m) : null;
+          return (
+            <button
+              key={o.id}
+              type="button"
+              onClick={() => selectObject(o.id)}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 hover:bg-muted",
+                o.id === selectedObjectId && "border-foreground bg-muted",
+              )}
+            >
+              {thumb ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={thumb} alt="" className="size-5 rounded-sm object-contain" />
+              ) : (
+                <span className="size-2.5 rounded-full bg-sky-500" />
+              )}
+              <span className="max-w-24 truncate">{m?.name ?? "도기"}</span>
+            </button>
+          );
+        })}
       </div>
 
-      {placement && material && (
+      {selectedObjectId && <ObjectPanel />}
+
+      {!selectedObjectId && placement && material && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t pt-2">
           <span className="max-w-40 truncate font-medium" title={material.name}>
             {material.name}

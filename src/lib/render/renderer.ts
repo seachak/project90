@@ -29,7 +29,7 @@ import {
 import type { SceneSettings } from "@/lib/render/colorGrade";
 import { ColorGradeFilter } from "@/lib/render/gradeFilter";
 import { polygonBounds, type Point } from "@/lib/geometry";
-import { canvasToImageData, drawToCanvas, loadImage } from "@/lib/image/loadImage";
+import { canvasToBlob, canvasToImageData, drawToCanvas, loadImage } from "@/lib/image/loadImage";
 import type { RasterLike } from "@/lib/image/palette";
 import { rasterizePolygon } from "@/lib/mask/rasterize";
 import { applyHomography, homographyFromRect, invertHomography, localScale, type Mat3 } from "@/lib/render/homography";
@@ -39,7 +39,13 @@ import { SURFACE_FRAGMENT, SURFACE_VERTEX } from "@/lib/render/shaders";
 import { computeShading, encodeShading } from "@/lib/render/shading";
 import type { RenderSurface } from "@/store/useProjectStore";
 import type { Material, MaterialMeta } from "@/types/material";
-import type { TilePlacement } from "@/types/placement";
+import type { ObjectPlacement, TilePlacement } from "@/types/placement";
+import {
+  imagePointToFixtureUv,
+  solveFixtureGeometry,
+  type FixtureGeometry,
+  type FloorPlane,
+} from "@/lib/render/fixture";
 
 export interface CameraState {
   scale: number;
@@ -80,6 +86,45 @@ interface SurfaceLayer {
 
 const MAX_IMAGE_DECODE = 1024;
 const SHADING_RASTER_SIZE = 1024;
+/** 디코딩된 이미지 캐시 상한 (LRU) */
+const IMAGE_CACHE_LIMIT = 32;
+/** 히트테스트용 알파 그리드 해상도 */
+const ALPHA_PROBE = 64;
+/** 접지 그림자 방사형 그라디언트 텍스처 크기 */
+const SHADOW_TEX_SIZE = 128;
+
+/** 위생도기 레이어 — 접지 그림자 + 컷아웃 스프라이트 (Phase 8) */
+interface ObjectLayer {
+  placement: ObjectPlacement;
+  container: Container;
+  shadow: Sprite;
+  sprite: Sprite;
+  source: ImageSource | CanvasSource | null;
+  /** 컷아웃 URL — 알파 마스크 조회 키 */
+  url: string | null;
+  geometry: FixtureGeometry | null;
+  cutoutAspect: number;
+  key: string;
+  generation: number;
+}
+
+function objectKeyOf(p: ObjectPlacement, material: Material, pxPerMm: number): string {
+  return [
+    p.material_id,
+    p.pos_x.toFixed(5),
+    p.pos_y.toFixed(5),
+    p.scale,
+    p.rotation,
+    p.flip_x ? 1 : 0,
+    p.z_order,
+    material.cutout_url ?? "",
+    material.real_width_mm ?? "",
+    material.anchor_x ?? "",
+    material.anchor_y ?? "",
+    material.mount_type ?? "",
+    pxPerMm.toFixed(4),
+  ].join("|");
+}
 
 function placementKeyOf(p: TilePlacement, material: Material, pxPerMm: number, rect: PatternRect): string {
   const meta = (material.meta ?? {}) as MaterialMeta;
@@ -149,7 +194,15 @@ export class SceneRenderer {
   /** 씬 전체 색보정 (Phase 7) */
   private readonly gradeFilter = new ColorGradeFilter();
   private readonly layers = new Map<string, SurfaceLayer>();
+  private readonly objectLayers = new Map<string, ObjectLayer>();
+  private readonly selectionBox = new Graphics();
+  private selectedObjectId: string | null = null;
+  private shadowTexture: Texture | null = null;
+  /** 히트테스트용 컷아웃 알파 그리드 (URL → ALPHA_PROBE² Uint8Array) */
+  private readonly alphaMasks = new Map<string, Uint8Array>();
   private readonly imageCache = new Map<string, Promise<DecodedImage>>();
+  /** imageCache LRU 순서 (앞 = 가장 오래됨) */
+  private readonly imageCacheOrder: string[] = [];
   private readonly whiteSource: CanvasSource;
   private dirty = false;
   private raf = 0;
@@ -206,8 +259,22 @@ export class SceneRenderer {
   }
 
   // ---------- 이미지 ----------
+  /** LRU 순서 갱신 + 상한 초과분 제거 (자재를 많이 훑어봐도 메모리가 무한히 늘지 않게) */
+  private touchImageCache(url: string): void {
+    const i = this.imageCacheOrder.indexOf(url);
+    if (i >= 0) this.imageCacheOrder.splice(i, 1);
+    this.imageCacheOrder.push(url);
+    while (this.imageCacheOrder.length > IMAGE_CACHE_LIMIT) {
+      const evicted = this.imageCacheOrder.shift();
+      if (evicted === undefined) break;
+      this.imageCache.delete(evicted);
+      this.alphaMasks.delete(evicted);
+    }
+  }
+
   private decodeImage(url: string): Promise<DecodedImage> {
     let p = this.imageCache.get(url);
+    this.touchImageCache(url);
     if (!p) {
       p = loadImage(url).then((img) => {
         const w = img.naturalWidth;
@@ -221,7 +288,11 @@ export class SceneRenderer {
         return { source: canvas, width: canvas.width, height: canvas.height };
       });
       this.imageCache.set(url, p);
-      p.catch(() => this.imageCache.delete(url));
+      p.catch(() => {
+        this.imageCache.delete(url);
+        const i = this.imageCacheOrder.indexOf(url);
+        if (i >= 0) this.imageCacheOrder.splice(i, 1);
+      });
     }
     return p;
   }
@@ -367,6 +438,7 @@ export class SceneRenderer {
     this.splitView.position.set(camera.x, camera.y);
     this.splitView.scale.set(camera.scale);
     this.updateSliderMask();
+    this.updateSelectionBox(); // 선택 테두리는 줌과 무관하게 항상 2px 로 보이게
     this.requestRender();
   }
 
@@ -790,6 +862,240 @@ export class SceneRenderer {
     src?.destroy();
   }
 
+  // ---------- 위생도기 (Phase 8) ----------
+
+  /** 기준 바닥면 — 자동 스케일의 기준. surface_type 이 floor 인 첫 레이어 */
+  private floorPlane(): FloorPlane | null {
+    for (const layer of this.layers.values()) {
+      if (layer.surface.surface_type === "floor") return { H: layer.H, invH: layer.invH };
+    }
+    return null;
+  }
+
+  /** 접지 그림자용 방사형 그라디언트 (렌더러당 1회 생성해 모든 도기가 공유) */
+  private getShadowTexture(): Texture {
+    if (this.shadowTexture) return this.shadowTexture;
+    const canvas = document.createElement("canvas");
+    canvas.width = SHADOW_TEX_SIZE;
+    canvas.height = SHADOW_TEX_SIZE;
+    const ctx = canvas.getContext("2d")!;
+    const r = SHADOW_TEX_SIZE / 2;
+    const g = ctx.createRadialGradient(r, r, 0, r, r, r);
+    // 중심은 진하고 가장자리로 갈수록 사라진다 — 접지부가 가장 어둡다
+    g.addColorStop(0, "rgba(0,0,0,1)");
+    g.addColorStop(0.45, "rgba(0,0,0,0.72)");
+    g.addColorStop(0.78, "rgba(0,0,0,0.22)");
+    g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(r, r, r, 0, Math.PI * 2);
+    ctx.fill();
+    this.shadowTexture = new Texture({ source: new CanvasSource({ resource: canvas }) });
+    return this.shadowTexture;
+  }
+
+  /**
+   * 위생도기 배치를 반영한다.
+   * 크기는 바닥 호모그래피에서 자동 산출하므로(solveFixtureGeometry) 사용자가 맞출 필요가 없다.
+   */
+  setObjectPlacements(placements: ObjectPlacement[], materials: Record<string, Material>): void {
+    const floor = this.floorPlane();
+    const seen = new Set<string>();
+
+    // 뒤쪽(z_order 낮음 · 화면 위쪽) 물체를 먼저 그린다
+    const ordered = [...placements].sort((a, b) => a.z_order - b.z_order || a.pos_y - b.pos_y);
+
+    for (const placement of ordered) {
+      const material = materials[placement.material_id];
+      if (!material?.cutout_url) continue;
+      seen.add(placement.id);
+
+      const posImage: Point = [placement.pos_x * this.imageWidth, placement.pos_y * this.imageHeight];
+      const scaleAt = floor ? localScale(floor.H, applyHomography(floor.invH, posImage)).mean : 0;
+      const key = objectKeyOf(placement, material, scaleAt);
+
+      let layer = this.objectLayers.get(placement.id);
+      if (!layer) {
+        const container = new Container();
+        const shadow = new Sprite(this.getShadowTexture());
+        shadow.anchor.set(0.5);
+        shadow.blendMode = "multiply";
+        const sprite = new Sprite();
+        sprite.anchor.set(0.5);
+        sprite.visible = false; // 디코딩 전에는 숨긴다 (실루엣을 대충 그리면 오히려 어색하다)
+        container.addChild(shadow, sprite);
+        this.objectRoot.addChild(container);
+        layer = {
+          placement,
+          container,
+          shadow,
+          sprite,
+          source: null,
+          url: null,
+          geometry: null,
+          cutoutAspect: 1,
+          key: "",
+          generation: 0,
+        };
+        this.objectLayers.set(placement.id, layer);
+      }
+
+      layer.placement = placement;
+      this.objectRoot.setChildIndex(layer.container, this.objectRoot.children.length - 1);
+      if (layer.key === key) continue;
+      layer.key = key;
+      this.loadObjectCutout(layer, material, floor);
+    }
+
+    for (const [id, layer] of this.objectLayers) {
+      if (seen.has(id)) continue;
+      this.disposeObjectLayer(layer);
+      this.objectLayers.delete(id);
+    }
+
+    this.updateSelectionBox();
+    this.requestRender();
+  }
+
+  private loadObjectCutout(layer: ObjectLayer, material: Material, floor: FloorPlane | null): void {
+    const url = material.cutout_url!;
+    const generation = ++layer.generation;
+
+    const place = (aspect: number) => {
+      layer.cutoutAspect = aspect;
+      const geo = solveFixtureGeometry({
+        floor,
+        posImage: [layer.placement.pos_x * this.imageWidth, layer.placement.pos_y * this.imageHeight],
+        material,
+        cutoutAspect: aspect,
+        userScale: layer.placement.scale,
+        rotationDeg: layer.placement.rotation,
+        imageWidth: this.imageWidth,
+      });
+      layer.geometry = geo;
+
+      layer.sprite.position.set(geo.centerPx[0], geo.centerPx[1]);
+      layer.sprite.width = geo.widthPx;
+      layer.sprite.height = geo.heightPx;
+      layer.sprite.rotation = geo.rotationRad;
+      layer.sprite.scale.x = Math.abs(layer.sprite.scale.x) * (layer.placement.flip_x ? -1 : 1);
+
+      layer.shadow.position.set(geo.shadow.center[0], geo.shadow.center[1]);
+      layer.shadow.width = geo.shadow.radiusX * 2;
+      layer.shadow.height = Math.max(2, geo.shadow.radiusY * 2);
+      layer.shadow.alpha = geo.shadow.alpha;
+      layer.shadow.visible = geo.shadow.alpha > 0.01;
+    };
+
+    // 캐시에 이미 있으면 동기적으로 크기가 잡혀 즉시 반응한다
+    if (layer.url === url && layer.sprite.texture !== Texture.EMPTY) {
+      place(layer.cutoutAspect);
+      this.updateSelectionBox();
+      this.requestRender();
+      return;
+    }
+
+    void this.decodeImage(url)
+      .then((img) => {
+        if (this.destroyed || layer.generation !== generation) return;
+        const prev = layer.source;
+        const source =
+          img.source instanceof HTMLCanvasElement
+            ? new CanvasSource({ resource: img.source })
+            : new ImageSource({ resource: img.source });
+        source.style = makeTextureStyle({});
+        layer.source = source;
+        layer.url = url;
+        layer.sprite.texture = new Texture({ source });
+        layer.sprite.visible = true;
+        prev?.destroy();
+        this.cacheAlphaMask(url, img);
+        place(img.width / img.height);
+        this.updateSelectionBox();
+        this.requestRender();
+      })
+      .catch(() => {
+        if (layer.generation === generation) {
+          layer.sprite.visible = false;
+          layer.shadow.visible = false;
+          this.requestRender();
+        }
+      });
+  }
+
+  /** 컷아웃의 알파를 저해상도 그리드로 떠 둔다 — 클릭이 도기 실루엣 안인지 판정용 */
+  private cacheAlphaMask(url: string, img: DecodedImage): void {
+    if (this.alphaMasks.has(url)) return;
+    try {
+      // UV 조회를 위해 비율을 무시하고 정사각 그리드로 리샘플한다
+      const canvas = document.createElement("canvas");
+      canvas.width = ALPHA_PROBE;
+      canvas.height = ALPHA_PROBE;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+      ctx.drawImage(img.source, 0, 0, ALPHA_PROBE, ALPHA_PROBE);
+      const { data } = canvasToImageData(canvas);
+      const mask = new Uint8Array(ALPHA_PROBE * ALPHA_PROBE);
+      for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3];
+      this.alphaMasks.set(url, mask);
+    } catch {
+      // 알파 마스크를 못 만들면 바운딩 박스로만 판정한다
+    }
+  }
+
+  /** 이미지 좌표에 있는 도기 id (앞에 있는 것 우선). 없으면 null */
+  hitTestObject(imagePoint: Point): string | null {
+    const layers = [...this.objectLayers.values()].filter((l) => l.geometry && l.sprite.visible);
+    for (let i = layers.length - 1; i >= 0; i--) {
+      const layer = layers[i];
+      const uv = imagePointToFixtureUv(layer.geometry!, imagePoint, layer.placement.flip_x);
+      if (!uv) continue;
+      const mask = layer.url ? this.alphaMasks.get(layer.url) : undefined;
+      if (!mask) return layer.placement.id;
+      const x = Math.min(ALPHA_PROBE - 1, Math.max(0, Math.floor(uv[0] * ALPHA_PROBE)));
+      const y = Math.min(ALPHA_PROBE - 1, Math.max(0, Math.floor(uv[1] * ALPHA_PROBE)));
+      if (mask[y * ALPHA_PROBE + x] > 24) return layer.placement.id;
+    }
+    return null;
+  }
+
+  setSelectedObject(id: string | null): void {
+    if (this.selectedObjectId === id) return;
+    this.selectedObjectId = id;
+    this.updateSelectionBox();
+    this.requestRender();
+  }
+
+  private updateSelectionBox(): void {
+    if (this.selectionBox.parent !== this.objectRoot) this.objectRoot.addChild(this.selectionBox);
+    this.objectRoot.setChildIndex(this.selectionBox, this.objectRoot.children.length - 1);
+    this.selectionBox.clear();
+    const layer = this.selectedObjectId ? this.objectLayers.get(this.selectedObjectId) : null;
+    const geo = layer?.geometry;
+    if (!geo) {
+      this.selectionBox.visible = false;
+      return;
+    }
+    this.selectionBox.visible = true;
+    const w = geo.widthPx;
+    const h = geo.heightPx;
+    this.selectionBox.position.set(geo.centerPx[0], geo.centerPx[1]);
+    this.selectionBox.rotation = geo.rotationRad;
+    this.selectionBox
+      .rect(-w / 2, -h / 2, w, h)
+      .stroke({ width: 2 / Math.max(0.01, this.camera.scale), color: 0x38bdf8, alpha: 0.95 });
+  }
+
+  /** 내보내기 등에서 선택 표시를 잠시 감춘다 */
+  private setSelectionVisible(visible: boolean): void {
+    this.selectionBox.visible = visible && Boolean(this.selectedObjectId);
+  }
+
+  private disposeObjectLayer(layer: ObjectLayer): void {
+    layer.container.parent?.removeChild(layer.container);
+    layer.container.destroy({ children: true });
+    layer.source?.destroy();
+  }
+
   // ---------- 렌더 루프 ----------
   requestRender(): void {
     if (this.dirty || this.destroyed) return;
@@ -809,6 +1115,49 @@ export class SceneRenderer {
     this.app.renderer.render(this.app.stage);
   }
 
+  /**
+   * 현재 화면을 원본 해상도 PNG 로 내보낸다.
+   * 카메라·뷰모드·선택 표시를 잠시 되돌려 한 프레임만 그린 뒤 원상 복구한다.
+   * 색보정 필터는 stage 에 걸려 있으므로 내보낸 이미지에도 그대로 반영된다.
+   */
+  async exportPng(): Promise<Blob> {
+    if (this.destroyed) throw new Error("렌더러가 이미 정리되었습니다.");
+    if (this.imageWidth === 0 || this.imageHeight === 0) throw new Error("배경 이미지가 아직 준비되지 않았습니다.");
+
+    const prev = {
+      camera: this.camera,
+      viewMode: this.viewMode,
+      viewportW: this.viewportW,
+      viewportH: this.viewportH,
+      resolution: this.app.renderer.resolution,
+      fadeAlpha: this.fade.alpha,
+    };
+
+    try {
+      this.setSelectionVisible(false);
+      if (this.viewMode !== "after") this.setViewMode("after");
+      cancelAnimationFrame(this.fade.raf);
+      this.fade.alpha = 0;
+      this.fade.target = 0;
+      this.applyView(false);
+      this.app.renderer.resolution = 1;
+      this.resize(this.imageWidth, this.imageHeight);
+      this.setCamera({ scale: 1, x: 0, y: 0 });
+      this.renderNow();
+      const canvas = this.app.renderer.extract.canvas(this.app.stage) as HTMLCanvasElement;
+      return await canvasToBlob(canvas, "image/png");
+    } finally {
+      this.app.renderer.resolution = prev.resolution;
+      this.viewMode = prev.viewMode;
+      this.fade.alpha = prev.fadeAlpha;
+      this.applyView(false);
+      this.resize(prev.viewportW, prev.viewportH);
+      this.setCamera(prev.camera);
+      this.setSelectionVisible(true);
+      this.requestRender();
+    }
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -816,6 +1165,12 @@ export class SceneRenderer {
     cancelAnimationFrame(this.fade.raf);
     for (const layer of this.layers.values()) this.disposeLayer(layer);
     this.layers.clear();
+    for (const layer of this.objectLayers.values()) this.disposeObjectLayer(layer);
+    this.objectLayers.clear();
+    this.alphaMasks.clear();
+    this.imageCache.clear();
+    this.imageCacheOrder.length = 0;
+    this.shadowTexture?.destroy(true);
     this.baseSource?.destroy();
     this.actualSource?.destroy();
     this.whiteSource.destroy();
