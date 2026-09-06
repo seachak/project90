@@ -3,6 +3,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { SimulatorCanvas } from "@/components/canvas/SimulatorCanvas";
 import type { SceneRenderer } from "@/lib/render/renderer";
+import { useProjectStore } from "@/store/useProjectStore";
 import { useViewerStore } from "@/store/useViewerStore";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +40,14 @@ export function BeforeAfterViewer({ className, onRendererReady }: BeforeAfterVie
         e.preventDefault();
       } else if (e.key === "b" || e.key === "B") setMode("before");
       else if (e.key === "a" || e.key === "A") setMode("after");
+      else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        // 방향키는 ① 슬라이더 핸들에 포커스가 있으면 핸들 이동, ② 도기가 선택돼 있으면 도기 미세이동,
+        // ③ 그 외에는 BEFORE ↔ AFTER 전환 (스펙: before/after 토글 ←/→ 지원)
+        if ((document.activeElement as HTMLElement | null)?.getAttribute("role") === "slider") return;
+        if (useProjectStore.getState().selectedObjectId) return;
+        e.preventDefault();
+        setMode(e.key === "ArrowLeft" ? "before" : "after");
+      }
     };
     const up = (e: KeyboardEvent) => {
       if (e.code === "Space") setHoldBefore(false);

@@ -64,9 +64,10 @@ pnpm dev                            # http://localhost:3000
      승인된 리디렉션 URI 에 `https://jxmwamgfgqqsedhjvpwn.supabase.co/auth/v1/callback` 추가
 4. **Integrations → GitHub** (선택, 마이그레이션 자동화)
    - 저장소 `seachak/project90`, Supabase directory `supabase`, Production branch `main`, Branching 활성화
-5. **샘플 타일 적재 (선택)** — SQL Editor 에서 [`supabase/seed.sql`](supabase/seed.sql) 실행.
-   절차적으로 생성한 타일 텍스처 22종(`public/samples/tiles/`)이 공개 자재로 들어갑니다. 재실행해도 안전합니다(upsert).
-   텍스처를 다시 만들려면 `pnpm samples:gen`.
+5. **샘플 자재 적재 (선택)** — SQL Editor 에서 [`supabase/seed.sql`](supabase/seed.sql) 실행.
+   절차적으로 생성한 타일 텍스처 22종(`public/samples/tiles/`)과 위생도기 컷아웃 5종(`public/samples/fixtures/`)이
+   공개 자재로 들어갑니다. 재실행해도 안전합니다(upsert).
+   텍스처와 위생도기 컷아웃을 다시 만들려면 `pnpm samples:gen`.
 6. **타입 재생성** — 스키마를 바꿨다면 `pnpm supabase login` 후 `pnpm db:types`
 
 ## 자재 등록 (기능 1)
@@ -142,6 +143,43 @@ pnpm dev                            # http://localhost:3000
 - 슬라이더마다 숫자 입력 필드 병행(키보드 조작), **더블클릭으로 기본값 리셋**, "원본과 비교" 버튼(누르는 동안 보정 전), 내 프리셋 저장/적용/삭제(localStorage)
 - 순수 로직 `src/lib/render/colorGrade.ts` (켈빈 변환, 프리셋, 유니폼 계산)에 테스트가 있습니다
 
+### 위생도기 배치 — 자동 스케일 · 접지 그림자 (기능 3-5)
+
+사진 속 도기 크기를 **사용자가 맞추지 않는다.** 자재 라이브러리에서 양변기를 클릭하면 바닥에 놓이고,
+드래그로 옮기면 원근에 맞춰 크기가 따라 변한다.
+
+1. 접지점을 바닥 표면의 역호모그래피로 되돌려 mm 좌표를 구한다
+2. 그 지점에서 `localScale()` (야코비안 특이값 근사)로 **px/mm 배율**을 구한다
+3. `화면 폭 = 자재의 실제 폭(mm) × 배율 × 미세조정(기본 1.0)`
+
+`src/lib/render/fixture.ts` 가 순수 함수로 이 계산과 앵커 역산·설치 높이·그림자 타원을 담당한다(테스트 있음).
+
+- **앵커**: 자재 등록 시 `AnchorPicker` 로 찍은 `anchor_x/anchor_y` 가 컷아웃 안에서 바닥에 닿는 지점.
+  기본값은 하단 중앙 (0.5, 1.0)
+- **설치 높이**: `mount_type` 이 `wall`/`countertop` 이면 종류별 표준 높이(세면기 800, 수전 1000, 샤워 1100mm)만큼
+  접지점에서 들어올린다
+- **접지 그림자**: 방사형 그라디언트를 `multiply` 로 깔고, 바닥면 단축률(`sy/sx`)만큼 눌러 원근을 따라가게 한다.
+  벽걸이는 더 작고 옅게. 이게 없으면 도기가 공중에 뜬 것처럼 보인다
+- **색온도 일치**: `objectRoot` 가 `world` 안에 있고 `ColorGradeFilter` 는 `app.stage` 에 걸려 있어
+  원본 사진·타일·도기·그림자가 **한 패스로 같은 보정**을 받는다
+- **선택/이동**: 컷아웃 알파 그리드(64²) 히트테스트라 실루엣 안을 눌러야 잡힌다.
+  드래그는 잡은 지점과 접지점의 차를 유지하고, 방향키로 1px(Shift 10px) 미세이동, Delete 로 삭제
+- 데모용 도기 5종(양변기·세면기·욕조·수전·샤워)은 `pnpm samples:gen` 이 알파 PNG 로 생성한다
+
+### 저장 · 공유 · 내보내기 (기능 5)
+
+- **자동 저장**: 배치와 조명 변경을 800ms 디바운스로 `placements` / `scene_settings` 에 저장.
+  헤더에 `HH:MM 저장됨` 표시, 저장 중 들어온 변경은 끝나고 한 번 더 반영
+- **실행취소/다시실행**: 배치 50단계 (Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y). 드래그는 시작 시점에만 기록
+- **PNG 내보내기**: 카메라를 원점·배율 1 로 두고 **원본 해상도**로 한 프레임만 렌더 → `extract` → PNG.
+  조명 보정이 그대로 담기고 선택 테두리는 빠진다
+- **공유 링크**: 결과 PNG 를 public `renders` 버킷에 올리고 `snapshots` 에 자기완결적 state 를 저장 →
+  `/share/[token]` 은 로그인 없이 `get_shared_snapshot` RPC 로 조회한다.
+  공유 뷰어는 익명이라 RLS 로 비공개 자재를 못 읽으므로 쓰인 자재·표면·견적을 state 안에 함께 담는다.
+  **원본 현장 사진(private `projects` 버킷)은 공유 경로에 노출되지 않는다**
+- **견적**: 표면 폴리곤을 역호모그래피로 mm 평면에 펴서 **실제 시공 면적**을 계산한다
+  (바깥 사각형 기준이면 ㄱ자 바닥이 과대 산정된다). 위생도기는 개수 단위로 합산
+
 ### 음영(Shading) 합성 — "자연스러움"의 핵심 (기능 3-2)
 
 `src/lib/render/shading.ts` (순수 함수, 테스트)
@@ -168,6 +206,10 @@ pnpm dev                            # http://localhost:3000
 | `pnpm db:types` | Supabase 타입 생성 → `src/types/database.types.ts` |
 | `pnpm db:push` | 마이그레이션 푸시 (`supabase link` 필요) |
 | `pnpm db:new <name>` | 새 마이그레이션 파일 |
+| `pnpm samples:gen` | 샘플 타일 텍스처 + 위생도기 컷아웃 생성 (`seed.sql`·`manifest.json` 갱신) |
+| `pnpm samples:room` | 데모용 합성 욕실 사진 생성 |
+
+`push`/PR 마다 GitHub Actions(`.github/workflows/ci.yml`)가 typecheck → lint → test → build 를 돌린다.
 
 ## 화면
 
@@ -182,6 +224,15 @@ pnpm dev                            # http://localhost:3000
 | `/materials` | 자재 라이브러리 |
 | `/materials/new` | 자재 등록 |
 | `/share/[token]` | 공유 뷰어 (읽기 전용, 로그인 불필요) |
+
+### 반응형
+
+- `lg` 이상: 좌 자재 · 중앙 캔버스 + 레이어 바 · 우 조명/견적 3단
+- `lg` 미만: 캔버스가 화면을 최대한 쓰고, 하단 탭바(`자재 · 레이어 · 조명 · 견적`) → 바텀시트로 전환.
+  Before/After 토글은 캔버스 위 오버레이로 내려온다. 375px 에서 가로 스크롤 없이 동작
+- 터치: 한 손가락 팬·도기 드래그, 두 손가락 핀치 줌, 더블탭(더블클릭) 맞춤
+- 접근성: 모든 토글·슬라이더에 `aria-label`, Before/After 는 **←/→** 및 B/A/Space,
+  와이프 핸들은 `role="slider"` + 방향키
 
 ## 프로젝트 구조
 
@@ -208,5 +259,5 @@ tests/               vitest 유닛 테스트
 | 6 | Before/After 뷰어 |
 | 7 | 조명·채도 셰이더 |
 | 8 | 위생도기 배치·자동 스케일·접지 그림자 |
-| 9 | 자동 저장, Realtime, undo/redo, 공유, 견적 |
-| 10 | GitHub Actions, 배포, 성능 최적화 |
+| 9 | 자동 저장, undo/redo, PNG 내보내기, 공유 링크, 견적 정확도 |
+| 10 | 모바일 바텀시트, 텍스처 LRU, 접근성, GitHub Actions |
