@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
@@ -189,9 +190,13 @@ interface MaterialFormProps {
 export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) {
   const router = useRouter();
   const { user, loading: userLoading } = useUser();
-  const guestMode = isGuestMaterialsEnabled();
-  /** Supabase 가 없으면 이 브라우저(IndexedDB)에만 저장한다 */
-  const localMode = !hasSupabaseEnv();
+  const guestMode = isGuestMaterialsEnabled() && hasSupabaseEnv();
+  /**
+   * 로그인하지 않았으면 이 브라우저(IndexedDB)에 저장한다.
+   * 환경변수 유무가 아니라 "지금 저장할 계정이 있는가"로 판단해야 한다 —
+   * Supabase 가 설정돼 있어도 로그인 전이면 저장 경로가 막혀 막다른 길이 된다.
+   */
+  const localMode = !userLoading && !user && !guestMode;
   const [shared, setShared] = useState<SharedFields>({ ...INITIAL_SHARED, kind: initialKind });
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -377,10 +382,6 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
   };
 
   const saveDraft = async (draft: Draft): Promise<boolean> => {
-    if (!user && !guestMode && !localMode) {
-      toast.error("로그인이 필요합니다.");
-      return false;
-    }
     const problem = validate(draft);
     if (problem) {
       patch(draft.id, { status: "error", error: problem });
@@ -540,21 +541,24 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
         <ImageDropzone onFiles={addFiles} compact={drafts.length > 0} />
         {localMode && (
           <p className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-sm text-sky-700 dark:text-sky-300">
-            로컬 모드 — Supabase 없이 <strong>이 브라우저에만</strong> 저장됩니다. 등록하면 시뮬레이터 자재
-            목록에 바로 나타납니다. 다른 기기에서는 보이지 않고, 브라우저 사이트 데이터를 지우면 사라집니다.
+            로그인하지 않아 <strong>이 브라우저에만</strong> 저장됩니다. 등록하면 시뮬레이터 자재 목록에 바로
+            나타납니다. 다른 기기에서는 보이지 않고, 브라우저 사이트 데이터를 지우면 사라집니다.
+            {hasSupabaseEnv() && (
+              <>
+                {" "}
+                <Link href="/login" className="font-medium underline underline-offset-2">
+                  로그인
+                </Link>
+                하면 계정에 저장돼 어느 기기에서나 보입니다.
+              </>
+            )}
           </p>
         )}
-        {!localMode && !user && !userLoading && (
-          guestMode ? (
-            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
-              게스트 모드 — 로그인 없이 등록됩니다. 등록한 자재는 <strong>공개 자재</strong>로 저장되며 소유자가 없어
-              나중에 로그인해도 &ldquo;내 자재&rdquo;로 잡히지 않습니다. 임시 확인용으로만 쓰세요.
-            </p>
-          ) : (
-            <p className="text-sm text-destructive">
-              이미지 분석·미리보기는 바로 사용할 수 있지만, 저장하려면 로그인이 필요합니다.
-            </p>
-          )
+        {guestMode && !user && !userLoading && (
+          <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-400">
+            게스트 모드 — 로그인 없이 서버에 등록됩니다. 등록한 자재는 <strong>공개 자재</strong>로 저장되며 소유자가 없어
+            나중에 로그인해도 &ldquo;내 자재&rdquo;로 잡히지 않습니다. 임시 확인용으로만 쓰세요.
+          </p>
         )}
 
         {drafts.length > 1 && (
@@ -910,9 +914,9 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
 
         <div className="flex flex-col gap-2">
           {drafts.length > 1 && (
-            <Button size="lg" onClick={saveAll} disabled={savingAll || pendingCount === 0 || (!user && !guestMode && !localMode)}>
+            <Button size="lg" onClick={saveAll} disabled={savingAll || pendingCount === 0}>
               {savingAll && <Loader2 className="size-4 animate-spin" />}
-              모두 저장 ({pendingCount}개)
+              {localMode ? "이 브라우저에 모두 저장" : "모두 저장"} ({pendingCount}개)
             </Button>
           )}
           <Button
@@ -926,10 +930,10 @@ export function MaterialForm({ initialKind = "tile_floor" }: MaterialFormProps) 
                 if (drafts.length === 1) router.push("/materials");
               }
             }}
-            disabled={!active || active.status === "saved" || active.status === "uploading" || active.status === "saving" || savingAll || (!user && !guestMode && !localMode)}
+            disabled={!active || active.status === "saved" || active.status === "uploading" || active.status === "saving" || savingAll}
           >
             {active && (active.status === "uploading" || active.status === "saving") && <Loader2 className="size-4 animate-spin" />}
-            {drafts.length > 1 ? "이 자재만 저장" : "저장"}
+            {drafts.length > 1 ? "이 자재만 저장" : localMode ? "이 브라우저에 저장" : "저장"}
           </Button>
         </div>
       </aside>
