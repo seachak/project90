@@ -28,7 +28,8 @@ import { distance, flattenPath, pointInPolygon, type Point } from "@/lib/geometr
 import type { RasterLike } from "@/lib/image/palette";
 import { maskToPolygon } from "@/lib/mask/contour";
 import { floodFill, smoothMask } from "@/lib/mask/floodFill";
-import { saveSurfaces } from "@/lib/projects/surfaces";
+import { saveSurfaces, surfaceToRow } from "@/lib/projects/surfaces";
+import { updateLocalProject } from "@/lib/projects/localStore";
 import { uploadShadingMaps } from "@/lib/render/shadingExport";
 import { createClient } from "@/lib/supabase/client";
 import { DEFAULT_LABELS, type EditableSurface, type SurfaceType } from "@/types/surface";
@@ -40,7 +41,7 @@ interface MaskEditorProps {
   imageWidth: number;
   imageHeight: number;
   initialSurfaces: EditableSurface[];
-  mode: "supabase" | "demo";
+  mode: "supabase" | "demo" | "local";
 }
 
 const MAX_HISTORY = 50;
@@ -329,6 +330,26 @@ export function MaskEditor({ projectId, projectName, imageUrl, imageWidth, image
       console.log("[demo] surfaces", surfaces);
       toast.success("데모 모드: 콘솔에 표면 데이터를 출력했습니다.");
       setDirty(false);
+      return;
+    }
+    if (mode === "local") {
+      // Supabase 없이 이 브라우저에 저장. shading map 은 저장하지 않고
+      // 렌더러가 매번 원본 사진에서 즉석 계산한다(≈30ms)
+      setSaving(true);
+      try {
+        const rows = surfaces
+          .map((sf) => surfaceToRow(projectId, sf))
+          .filter((r): r is NonNullable<typeof r> => r !== null);
+        await updateLocalProject(projectId, { surfaces: rows });
+        setDeletedIds([]);
+        setSurfaces((prev) => prev.map((sf) => ({ ...sf, isNew: false })));
+        setDirty(false);
+        toast.success(`표면 ${rows.length}개를 이 브라우저에 저장했습니다.`);
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "저장 실패");
+      } finally {
+        setSaving(false);
+      }
       return;
     }
     setSaving(true);

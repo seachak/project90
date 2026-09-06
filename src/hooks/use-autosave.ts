@@ -3,10 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { savePlacements, saveSceneSettings } from "@/lib/projects/placements";
+import { updateLocalProject } from "@/lib/projects/localStore";
 import { useProjectStore } from "@/store/useProjectStore";
 import { useSceneStore } from "@/store/useSceneStore";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
+
+/** 어디에 저장할지 — off 는 데모 모드 */
+export type AutosaveTarget = "supabase" | "local" | "off";
 
 export interface AutosaveState {
   status: SaveStatus;
@@ -24,7 +28,8 @@ const DEBOUNCE_MS = 800;
  *
  * 두 스토어의 revision 을 함께 본다 — 배치는 placements, 조명은 scene_settings 로 나뉘어 저장된다.
  */
-export function useAutosave(enabled: boolean): AutosaveState {
+export function useAutosave(target: AutosaveTarget): AutosaveState {
+  const enabled = target !== "off";
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,11 +49,19 @@ export function useAutosave(enabled: boolean): AutosaveState {
     running.current = true;
     setStatus("saving");
     try {
-      const supabase = createClient();
       const p = useProjectStore.getState();
       const scene = useSceneStore.getState().settings;
-      await savePlacements(supabase, project.id, p.tilePlacements, p.objectPlacements);
-      await saveSceneSettings(supabase, project.id, scene);
+      if (target === "local") {
+        await updateLocalProject(project.id, {
+          tilePlacements: p.tilePlacements.filter((t) => t.id !== "__hover__"),
+          objectPlacements: p.objectPlacements,
+          scene,
+        });
+      } else {
+        const supabase = createClient();
+        await savePlacements(supabase, project.id, p.tilePlacements, p.objectPlacements);
+        await saveSceneSettings(supabase, project.id, scene);
+      }
       setStatus("saved");
       setSavedAt(new Date());
       setError(null);
@@ -90,6 +103,7 @@ export function useAutosave(enabled: boolean): AutosaveState {
       unsubScene();
     };
   }, [enabled]);
+  // target 이 바뀌는 경우는 없지만(마운트 시 고정) flush 가 최신 값을 보도록 참조에 담아 둔다
 
   return {
     status,

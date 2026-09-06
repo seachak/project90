@@ -6,6 +6,8 @@ import { AppHeader } from "@/components/app-header";
 import { buttonVariants } from "@/components/ui/button";
 import { resolveImageUrl } from "@/lib/projects/images";
 import { createClient } from "@/lib/supabase/server";
+import { hasSupabaseEnv } from "@/lib/env";
+import { LocalSimulatorPage } from "@/components/projects/LocalProjects";
 import { cn } from "@/lib/utils";
 import { toRenderSurface } from "@/store/useProjectStore";
 import type { Material } from "@/types/material";
@@ -15,6 +17,7 @@ export const metadata: Metadata = { title: "시뮬레이터" };
 
 export default async function ProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!hasSupabaseEnv()) return <LocalSimulatorPage id={id} />;
   const supabase = await createClient();
   const [{ data: project }, { data: surfaceRows }, { data: placementRows }, { data: sceneRow }] = await Promise.all([
     supabase.from("projects").select("*").eq("id", id).maybeSingle(),

@@ -35,7 +35,7 @@ export interface SimulatorProps {
   sceneSettings?: Partial<Record<keyof SceneSettings, unknown>> | null;
   /** 데모 모드: 정적 자재 목록 */
   staticMaterials?: Material[];
-  mode: "supabase" | "demo";
+  mode: "supabase" | "demo" | "local";
 }
 
 /**
@@ -50,7 +50,7 @@ export function Simulator({ project, surfaces, materials, tilePlacements, object
   const rendererRef = useRef<SceneRenderer | null>(null);
   const setHasActual = useViewerStore((s) => s.setHasActual);
   useSimulatorShortcuts();
-  const autosave = useAutosave(mode === "supabase");
+  const autosave = useAutosave(mode === "supabase" ? "supabase" : mode === "local" ? "local" : "off");
 
   useEffect(() => {
     init({ project, surfaces, materials: [...materials, ...(staticMaterials ?? [])], tilePlacements, objectPlacements });

@@ -10,15 +10,11 @@
  * ⚠️ 이 브라우저에만 남는다 — 다른 기기·다른 브라우저에서는 보이지 않고,
  *    사이트 데이터를 지우면 함께 사라진다. 공유가 필요하면 Supabase 를 붙여야 한다.
  */
-import { openDB, type IDBPDatabase } from "idb";
+import { localDb, MATERIALS_STORE as STORE } from "@/lib/localDb";
 import type { Material, MaterialInsert } from "@/types/material";
 
-const DB_NAME = "project90-local";
-const DB_VERSION = 1;
-const STORE = "materials";
-
-/** 로컬 자재임을 알아보기 위한 id 접두사 — 원격 자재와 섞여도 구분된다 */
-export const LOCAL_ID_PREFIX = "local:";
+/** 로컬 자재 id 접두사. URL 경로에 그대로 쓰이므로 인코딩이 필요한 문자는 넣지 않는다 */
+export const LOCAL_ID_PREFIX = "local_";
 
 export function isLocalMaterial(id: string): boolean {
   return id.startsWith(LOCAL_ID_PREFIX);
@@ -33,21 +29,7 @@ interface LocalRecord {
   created_at: number;
 }
 
-let dbPromise: Promise<IDBPDatabase> | null = null;
-
-function db(): Promise<IDBPDatabase> {
-  if (typeof indexedDB === "undefined") {
-    return Promise.reject(new Error("이 브라우저는 로컬 저장(IndexedDB)을 지원하지 않습니다."));
-  }
-  dbPromise ??= openDB(DB_NAME, DB_VERSION, {
-    upgrade(database) {
-      if (!database.objectStoreNames.contains(STORE)) {
-        database.createObjectStore(STORE, { keyPath: "id" });
-      }
-    },
-  });
-  return dbPromise;
-}
+const db = localDb;
 
 /** id → object URL. 같은 자재를 다시 읽어도 URL 이 바뀌지 않게 캐시한다 */
 const urlCache = new Map<string, { source: string; thumb: string }>();

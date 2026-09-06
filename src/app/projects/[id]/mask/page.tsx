@@ -3,12 +3,15 @@ import { notFound, redirect } from "next/navigation";
 import { MaskEditor } from "@/components/canvas/MaskEditor";
 import { resolveImageUrl } from "@/lib/projects/images";
 import { createClient } from "@/lib/supabase/server";
+import { hasSupabaseEnv } from "@/lib/env";
+import { LocalMaskPage } from "@/components/projects/LocalProjects";
 import { toEditableSurface } from "@/types/surface";
 
 export const metadata: Metadata = { title: "표면 마스킹" };
 
 export default async function MaskPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!hasSupabaseEnv()) return <LocalMaskPage id={id} />;
   const supabase = await createClient();
   const [{ data: project }, { data: surfaces }] = await Promise.all([
     supabase.from("projects").select("*").eq("id", id).maybeSingle(),

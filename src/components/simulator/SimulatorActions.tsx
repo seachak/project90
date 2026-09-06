@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 
 interface SimulatorActionsProps {
   className?: string;
-  mode: "supabase" | "demo";
+  mode: "supabase" | "demo" | "local";
   getRenderer: () => SceneRenderer | null;
   saveStatus: SaveStatus;
   savedAt: Date | null;
@@ -43,7 +43,8 @@ export function SimulatorActions({ className, mode, getRenderer, saveStatus, sav
   const pastLen = useProjectStore((s) => s.past.length);
   const futureLen = useProjectStore((s) => s.future.length);
 
-  const isDemo = mode === "demo";
+  // 공유는 서버(Storage + snapshots)가 필요하다 — 로컬 프로젝트는 PNG 다운로드로 대신한다
+  const canShare = mode === "supabase";
 
   const exportPng = async (): Promise<Blob | null> => {
     const renderer = getRenderer();
@@ -161,7 +162,7 @@ export function SimulatorActions({ className, mode, getRenderer, saveStatus, sav
         <TooltipContent>초기화</TooltipContent>
       </Tooltip>
 
-      {!isDemo && (
+      {mode !== "demo" && (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -181,14 +182,14 @@ export function SimulatorActions({ className, mode, getRenderer, saveStatus, sav
               size="icon-sm"
               variant="ghost"
               onClick={onShare}
-              disabled={isDemo || busy !== null}
+              disabled={!canShare || busy !== null}
               aria-label="공유 링크 복사"
             >
               {busy === "share" ? <Loader2 className="size-4 animate-spin" /> : copied ? <Check className="size-4 text-emerald-500" /> : <Link2 className="size-4" />}
             </Button>
           }
         />
-        <TooltipContent>{isDemo ? "공유는 로그인 후 실제 프로젝트에서 가능합니다" : "저장하고 공유 링크 복사"}</TooltipContent>
+        <TooltipContent>{canShare ? "저장하고 공유 링크 복사" : "공유 링크는 Supabase 연결이 필요합니다 — PNG 다운로드를 쓰세요"}</TooltipContent>
       </Tooltip>
 
       <Tooltip>

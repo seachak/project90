@@ -81,16 +81,29 @@ pnpm dev
 터미널 창은 켜 둔 채로 두세요 (종료는 `Ctrl+C`).
 `/dev/*` 는 **개발 모드 전용**이라 `pnpm build && pnpm start` 나 배포본에서는 404 입니다.
 
-#### 로컬 모드 — Supabase 없이 실물 자재 등록
+#### 로컬 모드 — Supabase 없이 내 사진 + 내 자재
 
-`.env.local` 이 없으면 앱이 자동으로 **로컬 모드**로 동작합니다.
-`/materials/new` 에서 등록한 자재는 Supabase 대신 **이 브라우저의 IndexedDB** 에 이미지째 저장되고,
-시뮬레이터 자재 목록 맨 앞(`내 자재`)에 바로 나타납니다. 이음매 검사·3×3 미리보기·배경 제거 등
-등록 기능은 전부 그대로 동작하고, 썸네일만 서버(sharp) 대신 브라우저 캔버스로 만듭니다.
+`.env.local` 이 없으면 앱이 자동으로 **로컬 모드**로 동작합니다. 계정도 SQL 실행도 필요 없고,
+사진·자재·배치가 전부 **이 브라우저의 IndexedDB** 에 저장됩니다. URL 은 Supabase 경로와 같습니다.
 
-- 지운 자재는 `/materials` 목록에서 카드를 클릭해 삭제합니다
-- ⚠️ **이 브라우저에만 남습니다** — 다른 기기·다른 브라우저에서는 보이지 않고,
-  사이트 데이터를 지우면 사라집니다. 저장·공유·여러 사람이 함께 쓰려면 Supabase 를 연결하세요
+| 화면 | 로컬 모드에서 |
+| --- | --- |
+| `/materials/new` | 자재 등록 → IndexedDB. 이음매 검사·3×3 미리보기·배경 제거 그대로. 썸네일만 서버(sharp) 대신 캔버스로 |
+| `/materials` | 등록한 자재 목록. 카드를 클릭하면 삭제 |
+| `/projects/new` | 내 현장 사진 업로드 → 바로 마스킹 화면으로 |
+| `/projects/[id]/mask` | 폴리곤·매직완드·원근 4점 그대로. 저장하면 IndexedDB 로 |
+| `/projects/[id]` | 시뮬레이터. 자재 적용·조명·Before/After·PNG 내보내기 모두 동작하고 변경은 자동 저장됩니다 |
+
+서버 컴포넌트는 IndexedDB 를 읽을 수 없으므로, 각 라우트가 `hasSupabaseEnv()` 로 분기해
+`src/components/projects/LocalProjects.tsx` 의 클라이언트 화면으로 넘어갑니다.
+표면은 DB 행과 같은 모양(`SurfaceInsert`)으로 저장해 `surfaceToRow` / `toRenderSurface` /
+`toEditableSurface` 를 Supabase 경로와 똑같이 재사용합니다.
+
+**로컬 모드에서 안 되는 것**: 공유 링크(`/share/[token]`)는 서버 Storage 가 필요합니다 —
+결과를 남기려면 PNG 다운로드를 쓰세요.
+
+⚠️ **이 브라우저에만 남습니다.** 다른 기기·다른 브라우저에서는 보이지 않고, 사이트 데이터를 지우면
+사라집니다. 여러 사람이 함께 쓰거나 링크로 공유하려면 Supabase 를 연결하세요.
 
 내 현장 사진 업로드·자재 등록·저장·공유까지 쓰려면 아래 환경변수와 Supabase 설정이 필요합니다.
 

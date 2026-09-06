@@ -5,6 +5,8 @@ import { AppHeader } from "@/components/app-header";
 import { buttonVariants } from "@/components/ui/button";
 import { resolveImageUrls, thumbPathOf } from "@/lib/projects/images";
 import { createClient } from "@/lib/supabase/server";
+import { hasSupabaseEnv } from "@/lib/env";
+import { LocalProjectList } from "@/components/projects/LocalProjects";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "프로젝트" };
@@ -15,6 +17,8 @@ function formatDate(value: string | null): string {
 }
 
 export default async function ProjectsPage() {
+  // Supabase 가 없으면 이 브라우저에 저장된 현장을 보여준다
+  if (!hasSupabaseEnv()) return <LocalProjectList />;
   const supabase = await createClient();
   const { data: projects, error } = await supabase
     .from("projects")

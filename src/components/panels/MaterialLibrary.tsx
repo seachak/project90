@@ -10,6 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fetchMaterials } from "@/lib/materials/queries";
 import { listLocalMaterials } from "@/lib/materials/localStore";
 import { createClient } from "@/lib/supabase/client";
+import { hasSupabaseEnv } from "@/lib/env";
 import { useProjectStore } from "@/store/useProjectStore";
 import { cn } from "@/lib/utils";
 import { KIND_LABELS, isObjectKind, isTileKind, type Material, type MaterialKind } from "@/types/material";
@@ -64,7 +65,9 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
   }, [selectedSurface?.id, selectedSurface?.surface_type]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (staticMaterials) return;
+    // 정적 목록이 주어졌거나 Supabase 가 없으면 원격 조회를 하지 않는다
+    // (createClient() 는 환경변수가 없으면 throw 한다)
+    if (staticMaterials || !hasSupabaseEnv()) return;
     const id = ++requestId.current;
     setLoading(true);
     fetchMaterials(createClient(), { kind, search, hue: null, size: null, page: 0, pageSize: 40 })
@@ -82,7 +85,7 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
   }, [kind, search, staticMaterials, upsertMaterials]);
 
   const loadMore = async () => {
-    if (staticMaterials || loading || !hasMore) return;
+    if (staticMaterials || !hasSupabaseEnv() || loading || !hasMore) return;
     const id = ++requestId.current;
     setLoading(true);
     try {
@@ -101,9 +104,11 @@ export function MaterialLibrary({ staticMaterials, className, onPreload }: Mater
     const q = search.trim().toLowerCase();
     const matches = (m: Material) =>
       m.kind === kind && (!q || m.name.toLowerCase().includes(q) || (m.brand ?? "").toLowerCase().includes(q));
-    // 내가 등록한 자재를 맨 앞에 (샘플보다 먼저 보이게)
+    // 내가 등록한 자재를 맨 앞에 (샘플보다 먼저 보이게).
+    // 로컬 시뮬레이터는 같은 자재가 staticMaterials 로도 들어오므로 id 로 중복을 제거한다.
     const mine = localItems.filter(matches);
-    const rest = staticMaterials ? staticMaterials.filter(matches) : items.filter((m) => !mine.some((x) => x.id === m.id));
+    const seen = new Set(mine.map((m) => m.id));
+    const rest = (staticMaterials ?? items).filter((m) => matches(m) && !seen.has(m.id));
     return [...mine, ...rest];
   }, [staticMaterials, items, localItems, kind, search]);
 
