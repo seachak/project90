@@ -21,18 +21,77 @@ API 비용이 없으며, 같은 입력이면 항상 같은 결과가 나옵니�
 
 ## 시작하기
 
-### 요구사항
+### 1. Node.js 22 설치 (먼저 해야 합니다)
 
-- Node.js 22 LTS (`.node-version` 참고)
-- pnpm 9 — `corepack enable && corepack prepare pnpm@9.15.9 --activate`
+`pnpm` 도 `corepack` 도 **Node.js를 깔아야 생기는 도구**입니다.
+Node 없이 `pnpm`/`corepack` 을 치면 "내부 또는 외부 명령이 아닙니다" 만 계속 나옵니다.
 
-### 설치
+| 환경 | 설치 |
+| --- | --- |
+| Windows | `winget install OpenJS.NodeJS.LTS` — winget 이 없으면 <https://nodejs.org> 의 **LTS** 설치 파일 |
+| macOS | `brew install node@22` |
+| Linux | 배포판 패키지 또는 [nvm](https://github.com/nvm-sh/nvm) |
+
+> ⚠️ **설치가 끝나면 터미널을 닫고 새로 여세요.** PATH 는 새 터미널에만 반영됩니다.
+> 이 단계를 건너뛰면 설치해도 계속 "명령이 아닙니다" 가 뜹니다.
+
+확인:
+
+```bash
+node -v
+```
+
+`v22.x.x` 가 나오면 됩니다 (`.node-version` 참고).
+
+### 2. pnpm 9 설치
+
+```bash
+npm i -g pnpm@9.15.9
+pnpm -v
+```
+
+Node 16.9+ 에 내장된 corepack (`corepack enable && corepack prepare pnpm@9.15.9 --activate`) 을 써도 되지만,
+Windows 에서는 권한 문제로 걸리는 경우가 있어 위의 `npm i -g` 쪽이 실패가 적습니다.
+
+### 3. 의존성 설치와 샘플 생성
 
 ```bash
 pnpm install
-cp .env.local.example .env.local   # 값 채우기 (아래 참고)
-pnpm dev                            # http://localhost:3000
+pnpm samples:gen
+pnpm samples:room
 ```
+
+`samples:gen` 은 샘플 타일 22종과 위생도기 컷아웃 5종을, `samples:room` 은 데모 욕실 사진을 만듭니다.
+둘 다 처음 한 번만 실행하면 됩니다.
+
+### 4. Supabase 없이 바로 확인하기
+
+환경변수나 DB 설정 없이도 렌더링·도기 배치·조명을 전부 볼 수 있습니다.
+
+```bash
+pnpm dev
+```
+
+- **<http://localhost:3000/dev/sim>** — 합성 욕실 + 샘플 자재로 시뮬레이터 전체
+- **<http://localhost:3000/dev/mask>** — 표면 마스킹 에디터
+
+터미널 창은 켜 둔 채로 두세요 (종료는 `Ctrl+C`).
+`/dev/*` 는 **개발 모드 전용**이라 `pnpm build && pnpm start` 나 배포본에서는 404 입니다.
+
+내 현장 사진 업로드·자재 등록·저장·공유까지 쓰려면 아래 환경변수와 Supabase 설정이 필요합니다.
+
+```bash
+cp .env.local.example .env.local
+```
+
+### 문제가 생기면
+
+| 증상 | 원인과 해결 |
+| --- | --- |
+| `'corepack'/'pnpm'은(는) 내부 또는 외부 명령...` | Node 미설치, 또는 설치 후 터미널을 새로 열지 않음. 1단계부터 다시 |
+| 예시 명령을 붙여넣었더니 이상하게 동작 | Windows CMD 에서 `#` 는 주석이 아니라 인자로 넘어갑니다. 코드블록의 명령만 복사하세요 |
+| `pnpm install` 이 `cdn.sheetjs.com ... 403` 으로 중단 | `xlsx` 를 npm 레지스트리가 아닌 SheetJS CDN 에서 받아오는데 그 호스트가 막힌 망입니다. `package.json` 의 `"xlsx"` 값을 `"0.18.5"` 로 바꾸고 다시 설치하세요 (CSV/엑셀 일괄 등록에서 `XLSX.read`·`utils.sheet_to_json` 만 쓰므로 동작은 같습니다) |
+| 캔버스가 검게만 나옴 | WebGL2 를 지원하는 브라우저가 필요합니다. 하드웨어 가속이 꺼져 있지 않은지 확인하세요 |
 
 ### 환경변수 (`.env.local`)
 
@@ -43,8 +102,17 @@ pnpm dev                            # http://localhost:3000
 | `SUPABASE_SERVICE_ROLE_KEY` | 같은 화면의 `service_role` (서버 전용, 절대 커밋 금지) |
 | `SUPABASE_PROJECT_REF` | `jxmwamgfgqqsedhjvpwn` |
 | `NEXT_PUBLIC_SITE_URL` | 로컬 `http://localhost:3000`, 배포 시 Vercel 도메인 |
+| `NEXT_PUBLIC_GUEST_MATERIALS` | (선택) `1` 이면 로그인 없이 자재 등록 — 아래 참고 |
 
 `.env*.local` 은 `.gitignore` 에 포함되어 있습니다.
+
+#### 게스트 자재 등록 (임시)
+
+`NEXT_PUBLIC_GUEST_MATERIALS=1` 로 켜면 로그인 없이 `/materials` 에서 자재를 등록할 수 있습니다.
+RLS 와 Storage 정책은 그대로 두고 서버 라우트(`/api/materials/guest`)에서만 `service_role` 로 우회하므로
+DB 정책 자체는 안전하지만, **공개된 주소에 켜 두면 누구나 자재를 올릴 수 있는 열린 업로드 경로**가 됩니다.
+로컬에서 임시로 확인하는 용도이며 기본값은 꺼짐입니다. 켜려면 `SUPABASE_SERVICE_ROLE_KEY` 도 필요합니다.
+게스트 자재는 `owner_id` 없이 **공개 자재**로 저장됩니다(익명 조회 정책이 공개 자재만 허용).
 
 ## Supabase 설정 체크리스트 (대시보드에서 1회)
 
